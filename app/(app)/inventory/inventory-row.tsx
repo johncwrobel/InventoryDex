@@ -29,6 +29,10 @@ export interface InventoryRowData {
     imageSmall: string | null;
   };
   marketPrice: string | null;
+  /** % change in market price over the last 7 days. null = not enough history. */
+  priceChangePct: number | null;
+  /** Whether the list price is significantly above/below market. */
+  listFlag: "underpriced" | "overpriced" | null;
 }
 
 const CONDITION_LABELS: Record<string, string> = {
@@ -143,9 +147,11 @@ export function InventoryRow({
           {formatMoney(item.purchasePrice)}
         </td>
         <td className="px-3 py-2 text-right tabular-nums">
-          {formatMoney(item.marketPrice)}
+          <div>{formatMoney(item.marketPrice)}</div>
+          <PriceChangeBadge pct={item.priceChangePct} />
         </td>
         <td className="px-3 py-2 text-right">
+          <ListFlagPill flag={item.listFlag} />
           {editing ? (
             <div className="flex items-center justify-end gap-1">
               <input
@@ -236,7 +242,10 @@ export function InventoryRow({
           <div className="text-neutral-500">Paid</div>
           <div className="text-right">{formatMoney(item.purchasePrice)}</div>
           <div className="text-neutral-500">Market</div>
-          <div className="text-right">{formatMoney(item.marketPrice)}</div>
+          <div className="text-right">
+            {formatMoney(item.marketPrice)}
+            <PriceChangeBadge pct={item.priceChangePct} />
+          </div>
           <div className="text-neutral-500">List</div>
           <div className="text-right">
             {editing ? (
@@ -252,6 +261,7 @@ export function InventoryRow({
             ) : (
               formatMoney(item.listPrice)
             )}
+            <ListFlagPill flag={item.listFlag} />
           </div>
         </div>
         {error && (
@@ -297,5 +307,39 @@ export function InventoryRow({
         </div>
       </div>
     </li>
+  );
+}
+
+// ---------- Badge sub-components ----------
+
+function PriceChangeBadge({ pct }: { pct: number | null }) {
+  if (pct == null || Math.abs(pct) < 0.1) return null;
+  const up = pct > 0;
+  return (
+    <span
+      className={`mt-0.5 block text-xs font-medium tabular-nums ${
+        up
+          ? "text-green-700 dark:text-green-400"
+          : "text-red-600 dark:text-red-400"
+      }`}
+    >
+      {up ? "▲" : "▼"} {Math.abs(pct).toFixed(1)}%
+    </span>
+  );
+}
+
+function ListFlagPill({ flag }: { flag: "underpriced" | "overpriced" | null }) {
+  if (!flag) return null;
+  const isUnder = flag === "underpriced";
+  return (
+    <span
+      className={`mt-0.5 inline-block rounded px-1.5 py-0.5 text-xs font-medium ${
+        isUnder
+          ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+          : "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300"
+      }`}
+    >
+      {isUnder ? "⬇ Low" : "⬆ High"}
+    </span>
   );
 }

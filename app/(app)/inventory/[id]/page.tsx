@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { DetailDeleteButton } from "./delete-button";
+import { PriceChart, type PriceChartPoint } from "./price-chart";
 
 const CONDITION_LABELS: Record<string, string> = {
   MINT: "Mint",
@@ -50,11 +51,9 @@ export default async function InventoryDetailPage({
     include: {
       card: {
         include: {
-          // Latest 20 price snapshots; we only need the most recent matching
-          // finish for now, but pulling more leaves room for the M3 chart.
           prices: {
             orderBy: { capturedAt: "desc" },
-            take: 20,
+            take: 90,
           },
         },
       },
@@ -63,7 +62,18 @@ export default async function InventoryDetailPage({
 
   if (!item) notFound();
 
-  const latestPrice = item.card.prices.find((p) => p.finish === item.finish);
+  // Filter price history to this item's finish, reverse to chronological order.
+  const finishPrices = item.card.prices
+    .filter((p) => p.finish === item.finish)
+    .slice()
+    .reverse();
+
+  const latestPrice = finishPrices.length > 0 ? finishPrices[finishPrices.length - 1] : undefined;
+
+  const chartData: PriceChartPoint[] = finishPrices.map((p) => ({
+    date: p.capturedAt.toISOString(),
+    market: p.market != null ? Number(p.market) : null,
+  }));
 
   return (
     <div className="space-y-6">
@@ -75,6 +85,18 @@ export default async function InventoryDetailPage({
           ← Back to inventory
         </Link>
       </div>
+
+      {/* Price history chart */}
+      {chartData.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+            Market price history
+          </h2>
+          <div className="rounded-xl border border-black/10 p-4 dark:border-white/10">
+            <PriceChart data={chartData} />
+          </div>
+        </section>
+      )}
 
       <div className="flex flex-col gap-6 md:flex-row">
         {/* Card image */}
