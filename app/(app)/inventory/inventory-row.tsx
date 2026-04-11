@@ -9,6 +9,7 @@
  * the parent page can stay a server component.
  */
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { updateListPrice, deleteInventoryItem } from "@/lib/actions";
 
@@ -103,27 +104,33 @@ export function InventoryRow({
     });
   }
 
+  const detailHref = `/inventory/${item.id}`;
+
   // ---------- Desktop row ----------
   if (variant === "desktop") {
     return (
-      <tr className="border-t border-black/10 align-middle dark:border-white/10">
+      <tr className="border-t border-black/10 align-middle dark:border-white/10 hover:bg-black/[.02] dark:hover:bg-white/[.02]">
         <td className="px-3 py-2">
-          {item.card.imageSmall ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={item.card.imageSmall}
-              alt=""
-              className="h-14 w-auto rounded"
-            />
-          ) : (
-            <div className="h-14 w-10 rounded border border-dashed border-black/15 dark:border-white/15" />
-          )}
+          <Link href={detailHref} className="inline-block" aria-label={`View ${item.card.name}`}>
+            {item.card.imageSmall ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={item.card.imageSmall}
+                alt=""
+                className="h-14 w-auto rounded"
+              />
+            ) : (
+              <div className="h-14 w-10 rounded border border-dashed border-black/15 dark:border-white/15" />
+            )}
+          </Link>
         </td>
         <td className="px-3 py-2">
-          <div className="font-medium">{item.card.name}</div>
-          <div className="text-xs text-neutral-500">
-            {item.card.setName} · #{item.card.number}
-          </div>
+          <Link href={detailHref} className="block">
+            <div className="font-medium hover:underline">{item.card.name}</div>
+            <div className="text-xs text-neutral-500">
+              {item.card.setName} · #{item.card.number}
+            </div>
+          </Link>
         </td>
         <td className="px-3 py-2 text-xs">
           <div>{CONDITION_LABELS[item.condition] ?? item.condition}</div>
@@ -198,23 +205,29 @@ export function InventoryRow({
   // ---------- Mobile card ----------
   return (
     <li className="flex gap-3 rounded-xl border border-black/10 p-3 dark:border-white/10">
-      {item.card.imageSmall ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={item.card.imageSmall}
-          alt=""
-          className="h-24 w-auto self-start rounded"
-        />
-      ) : (
-        <div className="h-24 w-16 self-start rounded border border-dashed border-black/15 dark:border-white/15" />
-      )}
+      <Link
+        href={detailHref}
+        className="shrink-0"
+        aria-label={`View ${item.card.name}`}
+      >
+        {item.card.imageSmall ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={item.card.imageSmall}
+            alt=""
+            className="h-24 w-auto self-start rounded"
+          />
+        ) : (
+          <div className="h-24 w-16 self-start rounded border border-dashed border-black/15 dark:border-white/15" />
+        )}
+      </Link>
       <div className="flex-1 space-y-1 text-sm">
-        <div>
-          <div className="font-medium">{item.card.name}</div>
+        <Link href={detailHref} className="block">
+          <div className="font-medium hover:underline">{item.card.name}</div>
           <div className="text-xs text-neutral-500">
             {item.card.setName} · #{item.card.number}
           </div>
-        </div>
+        </Link>
         <div className="text-xs text-neutral-600 dark:text-neutral-400">
           {CONDITION_LABELS[item.condition] ?? item.condition} ·{" "}
           {FINISH_LABELS[item.finish] ?? item.finish} · qty {item.quantity}

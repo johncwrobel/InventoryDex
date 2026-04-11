@@ -56,6 +56,7 @@ Three domain tables sit alongside the Auth.js tables:
 - `app/(auth)/*` — sign-in and not-invited pages (unauthenticated).
 - `app/(app)/*` — everything behind the session gate. The `(app)/layout.tsx` calls `auth()` and redirects to `/sign-in` if there's no session, so pages inside can assume `session.user.id` is non-null.
 - `app/api/*` — route handlers. Auth-gated endpoints must call `auth()` themselves; being under `(app)` doesn't protect API routes.
+- **Dynamic segment params are async in Next.js 16.** Page props are `{ params: Promise<{ id: string }> }`, not `{ params: { id: string } }`. Destructure with `const { id } = await params;` at the top of the server component. Same rule for `searchParams`.
 
 ### Server actions (`lib/actions.ts`)
 All mutation actions live in `lib/actions.ts` with a top-of-file `"use server"` directive and follow this pattern:
