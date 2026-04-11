@@ -10,8 +10,8 @@ Next.js 16 · React 19 · TypeScript · Tailwind v4 · PostgreSQL (Prisma 6) · 
 
 ```bash
 npm install
-cp .env.example .env.local          # then fill in real values
-npx prisma migrate dev --name init  # after DATABASE_URL is set
+cp .env.example .env.local              # then fill in real values
+npm run db:migrate -- --name init       # create the schema in your database
 npm run dev
 ```
 
@@ -20,10 +20,18 @@ Open http://localhost:3000 — you'll be redirected to `/sign-in`. Enter an allo
 ## Scripts
 
 ```bash
-npm run dev     # dev server (Turbopack)
-npm run build   # production build
-npm run start   # run built app
-npm run lint    # eslint
+npm run dev          # dev server (Turbopack)
+npm run build        # production build
+npm run start        # run built app
+npm run lint         # eslint
+
+# Database (all load .env.local via dotenv-cli; the Prisma CLI doesn't read
+# .env.local on its own)
+npm run db:migrate   # prisma migrate dev — create a new migration + apply it
+npm run db:deploy    # prisma migrate deploy — apply pending migrations (prod)
+npm run db:generate  # prisma generate — regenerate the client
+npm run db:studio    # open Prisma Studio
+npm run db:push      # prisma db push — sync schema without a migration (dev only)
 ```
 
 See `CLAUDE.md` for working conventions and `.env.example` for the full list of required environment variables.

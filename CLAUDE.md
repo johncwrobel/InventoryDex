@@ -21,13 +21,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Common commands
 
 ```bash
-npm run dev      # start dev server (Turbopack)
-npm run build    # production build
-npm run start    # run built app
-npm run lint     # eslint
+npm run dev          # start dev server (Turbopack)
+npm run build        # production build
+npm run start        # run built app
+npm run lint         # eslint
+
+# Database — always use these wrappers, not `npx prisma` directly.
+# The Prisma CLI reads .env, NOT .env.local, so bare `npx prisma migrate dev`
+# fails with "Environment variable not found: DATABASE_URL". The wrappers
+# load .env.local via dotenv-cli.
+npm run db:migrate   # prisma migrate dev (pass `-- --name foo` to set a name)
+npm run db:deploy    # prisma migrate deploy (for prod-style application)
+npm run db:generate  # prisma generate
+npm run db:studio    # open Prisma Studio
+npm run db:push      # prisma db push (dev-only, skips migration history)
 ```
 
-Database/test commands will be added here as they're introduced.
+Test commands will be added here as they're introduced.
 
 ## Important: Next.js 16 specifics
 
