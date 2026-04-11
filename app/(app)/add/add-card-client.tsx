@@ -286,7 +286,7 @@ export function AddCardClient() {
             <button
               type="submit"
               disabled={pending}
-              className="rounded-lg bg-black px-4 py-2.5 text-sm font-medium text-white transition hover:bg-black/90 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-white/90"
+              className="rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-red-700 disabled:opacity-50"
             >
               {pending ? "Adding…" : "Add to inventory"}
             </button>
@@ -411,7 +411,7 @@ export function AddCardClient() {
               <button
                 type="button"
                 onClick={() => setSelected(card)}
-                className="group flex w-full flex-col items-center gap-2 rounded-lg border border-black/10 p-2 text-left transition hover:border-black/30 hover:shadow-sm dark:border-white/10 dark:hover:border-white/30"
+                className="group flex w-full flex-col items-center gap-2 rounded-lg border border-black/10 p-2 text-left transition hover:border-red-300 hover:shadow-sm dark:border-white/10 dark:hover:border-red-700"
               >
                 {card.imageSmall ? (
                   // eslint-disable-next-line @next/next/no-img-element

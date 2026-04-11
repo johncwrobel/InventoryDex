@@ -26,34 +26,34 @@ export default async function AppLayout({
 
   return (
     <div className="flex min-h-dvh flex-col">
-      <header className="sticky top-0 z-10 border-b border-black/10 bg-white/80 backdrop-blur dark:border-white/10 dark:bg-neutral-950/80">
+      <header className="sticky top-0 z-10 bg-red-600 dark:bg-red-700">
         <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-4 py-3">
-          <Link href="/inventory" className="text-base font-semibold tracking-tight">
+          <Link href="/inventory" className="text-base font-bold tracking-tight text-white">
             InventoryDex
           </Link>
           <nav className="flex items-center gap-1 text-sm">
             <Link
               href="/inventory"
-              className="rounded-md px-3 py-1.5 hover:bg-black/5 dark:hover:bg-white/10"
+              className="rounded-md px-3 py-1.5 text-white/90 hover:bg-white/15"
             >
               Inventory
             </Link>
             <Link
               href="/add"
-              className="rounded-md px-3 py-1.5 hover:bg-black/5 dark:hover:bg-white/10"
+              className="rounded-md px-3 py-1.5 text-white/90 hover:bg-white/15"
             >
               Add
             </Link>
             <Link
               href="/scan"
-              className="rounded-md px-3 py-1.5 hover:bg-black/5 dark:hover:bg-white/10"
+              className="rounded-md px-3 py-1.5 text-white/90 hover:bg-white/15"
             >
               Scan
             </Link>
             <form action={signOutAction}>
               <button
                 type="submit"
-                className="ml-2 rounded-md px-3 py-1.5 text-neutral-600 hover:bg-black/5 dark:text-neutral-400 dark:hover:bg-white/10"
+                className="ml-2 rounded-md px-3 py-1.5 text-white/70 transition hover:bg-white/15 hover:text-white"
               >
                 Sign out
               </button>

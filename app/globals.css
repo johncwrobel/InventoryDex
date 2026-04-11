@@ -3,19 +3,34 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* Brand palette — Pokémon-inspired red */
+  --color-brand:       #DC2626; /* red-600  */
+  --color-brand-dark:  #B91C1C; /* red-700  */
+  --color-brand-muted: #FEE2E2; /* red-100  */
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background:    var(--background);
+  --color-foreground:    var(--foreground);
+  --font-sans:           var(--font-geist-sans);
+  --font-mono:           var(--font-geist-mono);
+
+  /* Expose brand tokens to Tailwind so bg-brand, text-brand, etc. work */
+  --color-brand:         var(--color-brand);
+  --color-brand-dark:    var(--color-brand-dark);
+  --color-brand-muted:   var(--color-brand-muted);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background:        #0a0a0a;
+    --foreground:        #ededed;
+
+    /* Lighter red reads better against dark backgrounds */
+    --color-brand:       #EF4444; /* red-500  */
+    --color-brand-dark:  #DC2626; /* red-600  */
+    --color-brand-muted: rgba(239, 68, 68, 0.12);
   }
 }
 
@@ -28,6 +43,6 @@ body {
 /* Shared input styling used across forms (add card, inline edit, etc.). */
 @layer components {
   .input-base {
-    @apply block w-full rounded-md border border-black/15 bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-black/40 focus:ring-2 focus:ring-black/10 dark:border-white/15 dark:bg-neutral-900 dark:focus:border-white/40 dark:focus:ring-white/10;
+    @apply block w-full rounded-md border border-black/15 bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-brand/50 focus:ring-2 focus:ring-brand/20 dark:border-white/15 dark:bg-neutral-900 dark:focus:border-brand/60 dark:focus:ring-brand/30;
   }
 }

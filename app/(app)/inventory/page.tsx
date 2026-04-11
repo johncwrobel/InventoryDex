@@ -48,7 +48,7 @@ export default async function InventoryPage() {
         </div>
         <Link
           href="/add"
-          className="rounded-lg bg-black px-4 py-2.5 text-sm font-medium text-white transition hover:bg-black/90 dark:bg-white dark:text-black dark:hover:bg-white/90"
+          className="rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-red-700"
         >
           Add a card
         </Link>
@@ -92,7 +92,7 @@ export default async function InventoryPage() {
         </div>
         <Link
           href="/add"
-          className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
+          className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700"
         >
           Add
         </Link>
@@ -101,7 +101,7 @@ export default async function InventoryPage() {
       {/* Desktop table */}
       <div className="hidden overflow-x-auto rounded-xl border border-black/10 md:block dark:border-white/10">
         <table className="w-full text-sm">
-          <thead className="bg-black/[.03] text-left text-xs uppercase tracking-wide text-neutral-500 dark:bg-white/[.03]">
+          <thead className="bg-red-50 text-left text-xs uppercase tracking-wide text-neutral-500 dark:bg-red-950/20">
             <tr>
               <th className="px-3 py-2 font-medium"> </th>
               <th className="px-3 py-2 font-medium">Card</th>
