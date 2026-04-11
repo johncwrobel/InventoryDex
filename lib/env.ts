@@ -41,6 +41,14 @@ const serverSchema = z.object({
   // Optional API key — pokemontcg.io works without one but with stricter rate limits.
   POKEMONTCG_API_KEY: z.string().optional(),
 
+  // --- Pricing thresholds ---
+  // Minimum absolute % change in market price (over 7 days) that triggers a
+  // recent-change badge on the inventory list. Default: 5 (= ±5%).
+  PRICE_CHANGE_THRESHOLD_PCT: z.coerce.number().min(0).max(100).default(5),
+  // Minimum % gap between list price and market price that flags a row as
+  // underpriced or overpriced. Default: 15 (= 15%).
+  LIST_PRICE_THRESHOLD_PCT: z.coerce.number().min(0).max(100).default(15),
+
   // --- Runtime ---
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });
