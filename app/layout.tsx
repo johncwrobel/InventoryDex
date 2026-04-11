@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TCG Inventory",
+  title: "InventoryDex",
   description: "Pokémon TCG inventory tracking for vendors.",
 };
 

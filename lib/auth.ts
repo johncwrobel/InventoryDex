@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
 
 /**
- * Auth.js v5 configuration for TCG Inventory Tool.
+ * Auth.js v5 configuration for InventoryDex.
  *
  * - Passwordless magic-link sign-in via Resend.
  * - Prisma adapter persists users, sessions, and verification tokens.

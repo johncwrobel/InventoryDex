@@ -22,7 +22,7 @@ export default async function SignInPage({
     <main className="flex min-h-dvh items-center justify-center p-6">
       <div className="w-full max-w-sm space-y-6 rounded-2xl border border-black/10 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-neutral-900">
         <div className="space-y-1 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight">TCG Inventory</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">InventoryDex</h1>
           <p className="text-sm text-neutral-600 dark:text-neutral-400">
             Sign in with a magic link.
           </p>

@@ -1,4 +1,4 @@
-// Prisma schema for TCGInventoryTool
+// Prisma schema for InventoryDex
 // See CLAUDE.md for the overall data model rationale.
 
 generator client {

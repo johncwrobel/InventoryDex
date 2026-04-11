@@ -29,7 +29,7 @@ export default async function AppLayout({
       <header className="sticky top-0 z-10 border-b border-black/10 bg-white/80 backdrop-blur dark:border-white/10 dark:bg-neutral-950/80">
         <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-4 py-3">
           <Link href="/inventory" className="text-base font-semibold tracking-tight">
-            TCG Inventory
+            InventoryDex
           </Link>
           <nav className="flex items-center gap-1 text-sm">
             <Link

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**TCGInventoryTool** — a web-based inventory management tool for Pokémon TCG vendors. Tracks purchase price, list price, and live market price (via pokemontcg.io), flags cards whose market value has moved recently, and highlights cards priced significantly above or below market. Mobile-friendly. Invite-only (small private group).
+**InventoryDex** — a web-based inventory management tool for Pokémon TCG vendors. Tracks purchase price, list price, and live market price (via pokemontcg.io), flags cards whose market value has moved recently, and highlights cards priced significantly above or below market. Mobile-friendly. Invite-only (small private group).
 
 ## Stack
 
