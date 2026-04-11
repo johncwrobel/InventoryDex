@@ -1,9 +1,9 @@
 /**
- * Shared shape for /api/cards/search results.
+ * Shared shapes for /api/cards/search and /api/sets.
  *
- * Lives in lib/ (not in the route file) so the add-card client component
- * can import it without dragging server-only code (auth, prisma) into the
- * client bundle.
+ * Lives in lib/ (not in the route files) so client components can import
+ * these without dragging server-only code (auth, prisma) into the client
+ * bundle.
  */
 export interface CardSearchResult {
   id: string;
@@ -15,4 +15,11 @@ export interface CardSearchResult {
   imageSmall: string | null;
   imageLarge: string | null;
   tcgplayerUrl: string | null;
+}
+
+export interface CardSetSummary {
+  id: string;
+  name: string;
+  series: string;
+  releaseDate: string; // "YYYY/MM/DD"
 }

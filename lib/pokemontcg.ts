@@ -4,8 +4,9 @@
  * Docs: https://docs.pokemontcg.io/
  *
  * We only use the bits we need for InventoryDex:
- *   - searchCards(query) — name-based search for the add-card flow
+ *   - searchCards(opts)  — filtered card search for the add-card flow
  *   - getCard(id)        — refetch a single card (used by the price cron later)
+ *   - getSets()          — list all sets (used by the set filter dropdown)
  *
  * The API works without an API key at a lower rate limit; if
  * POKEMONTCG_API_KEY is set we send it as the `X-Api-Key` header.
@@ -57,6 +58,14 @@ export interface TcgPlayerPriceBlock {
   directLow?: number | null;
 }
 
+export interface PokemonTcgSet {
+  id: string;
+  name: string;
+  series: string;
+  releaseDate: string; // "YYYY/MM/DD"
+  total: number;
+}
+
 interface SearchResponse {
   data: PokemonTcgCard[];
   page: number;
@@ -65,30 +74,69 @@ interface SearchResponse {
   totalCount: number;
 }
 
+interface SetsResponse {
+  data: PokemonTcgSet[];
+}
+
 interface SingleResponse {
   data: PokemonTcgCard;
+}
+
+/**
+ * Sort keys supported by the add-card UI. Mapped to pokemontcg.io's
+ * `orderBy` string by `sortToOrderBy` below.
+ */
+export type CardSearchSort =
+  | "releaseDate:desc"
+  | "releaseDate:asc"
+  | "name:asc";
+
+export const CARD_SEARCH_SORTS: readonly CardSearchSort[] = [
+  "releaseDate:desc",
+  "releaseDate:asc",
+  "name:asc",
+] as const;
+
+export interface SearchCardsOptions {
+  query?: string;
+  setId?: string;
+  sort?: CardSearchSort;
+  pageSize?: number;
 }
 
 // ---------- Public API ----------
 
 /**
- * Search cards by name. Returns up to `pageSize` matches. The pokemontcg.io
- * query language supports Lucene-ish syntax; we quote user input and match
- * as a name prefix ("charizard*") so the add-card search behaves intuitively.
+ * Search cards with optional name, set, and sort filters. Returns up to
+ * `pageSize` matches. At least one of `query` (2+ chars) or `setId` must
+ * be provided; otherwise returns an empty array.
+ *
+ * The pokemontcg.io query language is Lucene-ish. Clauses are
+ * space-separated and AND'd together:
+ *   name:"charizard*" set.id:sv1
  */
 export async function searchCards(
-  query: string,
-  pageSize = 20,
+  options: SearchCardsOptions,
 ): Promise<PokemonTcgCard[]> {
-  const trimmed = query.trim();
-  if (!trimmed) return [];
+  const { query, setId, sort = "releaseDate:desc", pageSize = 24 } = options;
+  const trimmed = query?.trim() ?? "";
+  if (!trimmed && !setId) return [];
 
-  // Escape characters that have meaning in the pokemontcg.io query DSL.
-  const escaped = trimmed.replace(/["\\]/g, "\\$&");
+  const clauses: string[] = [];
+  if (trimmed) {
+    // Escape characters that have meaning in the pokemontcg.io query DSL.
+    const escaped = trimmed.replace(/["\\]/g, "\\$&");
+    clauses.push(`name:"${escaped}*"`);
+  }
+  if (setId) {
+    // pokemontcg.io set ids are alphanumerics + hyphens, safe to inline.
+    clauses.push(`set.id:${setId}`);
+  }
+
   const params = new URLSearchParams({
-    q: `name:"${escaped}*"`,
+    q: clauses.join(" "),
     pageSize: String(pageSize),
-    orderBy: "-set.releaseDate,number",
+    orderBy: sortToOrderBy(sort),
   });
 
   const res = await fetch(`${BASE_URL}/cards?${params.toString()}`, {
@@ -105,6 +153,40 @@ export async function searchCards(
   }
 
   const payload = (await res.json()) as SearchResponse;
+  return payload.data;
+}
+
+function sortToOrderBy(sort: CardSearchSort): string {
+  switch (sort) {
+    case "releaseDate:desc":
+      return "-set.releaseDate,number";
+    case "releaseDate:asc":
+      return "set.releaseDate,number";
+    case "name:asc":
+      return "name,number";
+  }
+}
+
+/**
+ * Fetch every Pokémon TCG set, newest first. The result is cached for a
+ * day at the Next.js fetch layer — sets change rarely (roughly once a
+ * quarter) so refetching per request is wasteful.
+ */
+export async function getSets(): Promise<PokemonTcgSet[]> {
+  const params = new URLSearchParams({
+    pageSize: "500", // comfortably above the current set count
+    orderBy: "-releaseDate",
+  });
+  const res = await fetch(`${BASE_URL}/sets?${params.toString()}`, {
+    headers: apiHeaders(),
+    next: { revalidate: 86400 },
+  });
+  if (!res.ok) {
+    throw new Error(
+      `pokemontcg.io getSets failed: ${res.status} ${res.statusText}`,
+    );
+  }
+  const payload = (await res.json()) as SetsResponse;
   return payload.data;
 }
 

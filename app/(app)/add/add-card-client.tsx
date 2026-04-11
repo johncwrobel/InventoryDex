@@ -11,10 +11,21 @@
  * state all live together — the page is small enough that splitting would
  * add more indirection than it saves.
  */
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import type { CardSearchResult } from "@/lib/card-search-types";
+import type {
+  CardSearchResult,
+  CardSetSummary,
+} from "@/lib/card-search-types";
 import { addInventoryItem } from "@/lib/actions";
+
+type SortValue = "releaseDate:desc" | "releaseDate:asc" | "name:asc";
+
+const SORT_OPTIONS: { value: SortValue; label: string }[] = [
+  { value: "releaseDate:desc", label: "Newest sets first" },
+  { value: "releaseDate:asc", label: "Oldest sets first" },
+  { value: "name:asc", label: "Name A → Z" },
+];
 
 const CONDITIONS = [
   { value: "MINT", label: "Mint" },
@@ -35,6 +46,10 @@ const FINISHES = [
 export function AddCardClient() {
   const router = useRouter();
   const [query, setQuery] = useState("");
+  const [setId, setSetId] = useState<string>("");
+  const [sort, setSort] = useState<SortValue>("releaseDate:desc");
+  const [sets, setSets] = useState<CardSetSummary[]>([]);
+  const [setsError, setSetsError] = useState<string | null>(null);
   const [results, setResults] = useState<CardSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -43,12 +58,48 @@ export function AddCardClient() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [pending, startTransition] = useTransition();
 
-  // Debounced search
+  // Load the set list once on mount. The server caches the upstream
+  // response, so re-mounting the page is cheap.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/sets");
+        if (!res.ok) throw new Error(`Failed to load sets (${res.status})`);
+        const body = (await res.json()) as { sets: CardSetSummary[] };
+        if (!cancelled) setSets(body.sets);
+      } catch (err) {
+        if (!cancelled) setSetsError((err as Error).message);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Group sets by series for the <optgroup> layout.
+  const setsBySeries = useMemo(() => {
+    const groups = new Map<string, CardSetSummary[]>();
+    for (const s of sets) {
+      const bucket = groups.get(s.series) ?? [];
+      bucket.push(s);
+      groups.set(s.series, bucket);
+    }
+    return groups;
+  }, [sets]);
+
+  // Debounced search. Re-runs whenever any filter changes. Text input is
+  // debounced (300ms); set + sort changes still pass through the same
+  // timer but feel immediate since clicks don't fire in quick succession.
   useEffect(() => {
     const trimmed = query.trim();
-    if (trimmed.length < 2) {
+    const hasQuery = trimmed.length >= 2;
+    const hasSet = setId.length > 0;
+
+    if (!hasQuery && !hasSet) {
       setResults([]);
       setSearchError(null);
+      setLoading(false);
       return;
     }
 
@@ -57,10 +108,14 @@ export function AddCardClient() {
       setLoading(true);
       setSearchError(null);
       try {
-        const res = await fetch(
-          `/api/cards/search?q=${encodeURIComponent(trimmed)}`,
-          { signal: controller.signal },
-        );
+        const params = new URLSearchParams();
+        if (hasQuery) params.set("q", trimmed);
+        if (hasSet) params.set("setId", setId);
+        params.set("sort", sort);
+
+        const res = await fetch(`/api/cards/search?${params.toString()}`, {
+          signal: controller.signal,
+        });
         if (!res.ok) {
           const body = (await res.json().catch(() => null)) as
             | { error?: string }
@@ -82,7 +137,7 @@ export function AddCardClient() {
       controller.abort();
       clearTimeout(timer);
     };
-  }, [query]);
+  }, [query, setId, sort]);
 
   function handleSubmit(formData: FormData) {
     setFormError(null);
@@ -249,21 +304,91 @@ export function AddCardClient() {
   }
 
   // ----- Search view -----
+  const hasQuery = query.trim().length >= 2;
+  const hasSet = setId.length > 0;
+  const anyFilter = hasQuery || hasSet;
+
   return (
     <div className="space-y-4">
-      <div>
-        <label htmlFor="card-search" className="sr-only">
-          Search for a card
-        </label>
-        <input
-          id="card-search"
-          type="search"
-          autoFocus
-          placeholder="Search Pokémon cards (e.g. Charizard)"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="input-base h-12 text-base"
-        />
+      <div className="space-y-3">
+        <div>
+          <label htmlFor="card-search" className="sr-only">
+            Search for a card
+          </label>
+          <input
+            id="card-search"
+            type="search"
+            autoFocus
+            placeholder="Search Pokémon cards (e.g. Charizard)"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="input-base h-12 text-base"
+          />
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[2fr_1fr]">
+          <div>
+            <label
+              htmlFor="card-set"
+              className="mb-1 block text-xs font-medium text-neutral-700 dark:text-neutral-300"
+            >
+              Set
+            </label>
+            <select
+              id="card-set"
+              value={setId}
+              onChange={(e) => setSetId(e.target.value)}
+              className="input-base"
+              disabled={sets.length === 0 && !setsError}
+            >
+              <option value="">All sets</option>
+              {Array.from(setsBySeries.entries()).map(([series, list]) => (
+                <optgroup key={series} label={series}>
+                  {list.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.releaseDate.slice(0, 4)})
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            {setsError && (
+              <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+                {setsError}
+              </p>
+            )}
+          </div>
+          <div>
+            <label
+              htmlFor="card-sort"
+              className="mb-1 block text-xs font-medium text-neutral-700 dark:text-neutral-300"
+            >
+              Sort
+            </label>
+            <select
+              id="card-sort"
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortValue)}
+              className="input-base"
+            >
+              {SORT_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {hasSet && (
+          <button
+            type="button"
+            onClick={() => setSetId("")}
+            className="text-xs text-neutral-600 underline underline-offset-2 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
+          >
+            Clear set filter
+          </button>
+        )}
       </div>
 
       {loading && (
@@ -273,8 +398,10 @@ export function AddCardClient() {
         <p className="text-sm text-red-600 dark:text-red-400">{searchError}</p>
       )}
 
-      {!loading && query.trim().length >= 2 && results.length === 0 && !searchError && (
-        <p className="text-sm text-neutral-500">No cards match “{query}”.</p>
+      {!loading && anyFilter && results.length === 0 && !searchError && (
+        <p className="text-sm text-neutral-500">
+          No cards match your filters.
+        </p>
       )}
 
       {results.length > 0 && (
