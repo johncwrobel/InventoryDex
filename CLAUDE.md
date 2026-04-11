@@ -87,6 +87,8 @@ Don't `import type { Foo } from "@/app/api/**/route"` in client components — e
 
 ## Git Workflow
 
+**Before starting a new milestone, pull the latest from GitHub** with `git pull --rebase origin main`, then run `npm install` if `package.json` changed. Vercel bots and manual commits land on `main` between sessions, and starting a milestone against stale state guarantees a messy rebase at push time.
+
 Commit work frequently with clean, descriptive commit messages and push to GitHub regularly so progress is never lost. After completing any meaningful unit of work (a feature, a fix, a refactor), commit and push before moving on. Prefer small, focused commits over large bundled ones.
 
 **Before every commit, review CLAUDE.md and update it if the change being committed introduces new architecture, patterns, commands, conventions, or gotchas that a future Claude instance would otherwise have to rediscover.** Include the CLAUDE.md update in the same commit as the change it describes. If nothing in CLAUDE.md is affected, skip the update — don't churn the file for its own sake.
