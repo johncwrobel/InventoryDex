@@ -43,6 +43,52 @@ Test commands will be added here as they're introduced.
 
 Next.js 16 has breaking changes from prior versions. **Before writing any Next-specific code**, read the relevant bundled doc in `node_modules/next/dist/docs/` — your training data is likely outdated. (See `AGENTS.md` — this is a hard rule, not a suggestion.)
 
+## Architecture
+
+### Data model
+Three domain tables sit alongside the Auth.js tables:
+
+- **`Card`** — canonical pokemontcg.io card metadata (name, set, images, TCGPlayer URL). Keyed by the upstream id (e.g. `sv1-25`) and **shared across all users** so we fetch/cache each unique card once.
+- **`InventoryItem`** — one vendor's copy of a card. Multiple rows per card are allowed (different condition / finish / purchase lots). Owns `purchasePrice`, `listPrice`, `quantity`, `condition`, `finish`, `notes`. Scoped to `userId`.
+- **`PricePoint`** — historical market-price snapshots per `(cardId, finish)`. Enables "recent change over N days" math. Never mutate existing rows — always insert a new snapshot.
+
+### Routing layout
+- `app/(auth)/*` — sign-in and not-invited pages (unauthenticated).
+- `app/(app)/*` — everything behind the session gate. The `(app)/layout.tsx` calls `auth()` and redirects to `/sign-in` if there's no session, so pages inside can assume `session.user.id` is non-null.
+- `app/api/*` — route handlers. Auth-gated endpoints must call `auth()` themselves; being under `(app)` doesn't protect API routes.
+
+### Server actions (`lib/actions.ts`)
+All mutation actions live in `lib/actions.ts` with a top-of-file `"use server"` directive and follow this pattern:
+1. `const session = await auth()` — reject if no `session.user.id`.
+2. Zod-validate the `FormData` payload. Return `{ ok: false, error, fieldErrors }` on failure.
+3. For updates/deletes, scope the Prisma query with `where: { id, userId }` (use `updateMany`/`deleteMany` and check `count`) so users can only touch their own rows.
+4. Convert numbers to `new Prisma.Decimal(...)` before writing money columns.
+5. `revalidatePath('/inventory')` (or the relevant path) before returning `{ ok: true }`.
+
+### Server → client data passing
+Prisma returns `Decimal` instances for money columns. **Do not** pass them directly to client components — serialize to strings in the server component first (`item.purchasePrice.toString()`). Client components format them back with `Number(...)`.
+
+### Client component file layout
+When a route needs client-side interactivity (e.g. the add-card search, the inline price editor), the pattern is:
+- `app/(app)/<route>/page.tsx` stays a server component. It fetches data and renders a thin wrapper.
+- `app/(app)/<route>/<name>-client.tsx` (or `<name>.tsx` with `"use client"`) holds the interactive piece.
+
+### Shared types across server/client
+Don't `import type { Foo } from "@/app/api/**/route"` in client components — even type-only imports can drag the route handler's server-only dependencies (`auth`, `prisma`) into the client bundle graph. Put shared shapes in `lib/*-types.ts` (see `lib/card-search-types.ts` for the pattern).
+
+### pokemontcg.io integration
+- `lib/pokemontcg.ts` wraps the upstream REST API. Only call it from server code.
+- `finishPriceKeys()` / `pricesForFinish()` handle the fact that TCGPlayer exposes different price blocks per finish variant (`normal`, `holofoil`, `1stEditionHolofoil`, etc.), and some variants are missing on some cards.
+- The `/api/cards/search` route upserts every returned card into the local `Card` table, so the subsequent add action usually hits cache. It still re-fetches defensively if the card is missing.
+
+### Styling conventions
+- Tailwind v4 with `@import "tailwindcss"` in `app/globals.css`. No `tailwind.config.js` — use `@theme` blocks and `@layer components` directly in CSS.
+- Form controls share a `.input-base` utility class defined in `globals.css`. Use it for `<input>`, `<select>`, `<textarea>` so the app has one consistent input style.
+
 ## Git Workflow
 
 Commit work frequently with clean, descriptive commit messages and push to GitHub regularly so progress is never lost. After completing any meaningful unit of work (a feature, a fix, a refactor), commit and push before moving on. Prefer small, focused commits over large bundled ones.
+
+**Before every commit, review CLAUDE.md and update it if the change being committed introduces new architecture, patterns, commands, conventions, or gotchas that a future Claude instance would otherwise have to rediscover.** Include the CLAUDE.md update in the same commit as the change it describes. If nothing in CLAUDE.md is affected, skip the update — don't churn the file for its own sake.
+
+When pushing fails with "fetch first," someone (or a Vercel bot) has landed a commit on `main` upstream. Rebase with `git pull --rebase origin main`, re-run `npm install` if `package.json` changed, re-verify the build, then push.
