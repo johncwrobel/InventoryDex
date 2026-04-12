@@ -79,8 +79,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth(() => ({
     async session({ session, user }) {
       if (session.user && user) {
         session.user.id = user.id;
-        // `user` here is the full Prisma User row — role is included.
-        session.user.role = ((user as unknown) as { role: string }).role as "ADMIN" | "USER";
+        // @auth/prisma-adapter only exposes standard AdapterUser fields (id,
+        // email, emailVerified, name, image) — custom columns like `role` are
+        // not included. Fetch role explicitly from the DB instead of casting.
+        const dbUser = await prisma.user.findUnique({
+          where: { id: user.id },
+          select: { role: true },
+        });
+        session.user.role = dbUser?.role ?? "USER";
       }
       return session;
     },

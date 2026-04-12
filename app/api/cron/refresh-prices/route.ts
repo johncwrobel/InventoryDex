@@ -84,7 +84,7 @@ async function refreshCard(
         rarity: upstream.rarity ?? null,
         imageSmall: upstream.images?.small ?? null,
         imageLarge: upstream.images?.large ?? null,
-        tcgplayerUrl: upstream.tcgplayer?.url ?? null,
+        tcgplayerUrl: upstream.tcgplayer?.url || null,
         lastFetchedAt: new Date(),
       },
     });

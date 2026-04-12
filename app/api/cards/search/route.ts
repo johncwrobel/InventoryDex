@@ -79,7 +79,7 @@ export async function GET(request: Request) {
             rarity: card.rarity ?? null,
             imageSmall: card.images?.small ?? null,
             imageLarge: card.images?.large ?? null,
-            tcgplayerUrl: card.tcgplayer?.url ?? null,
+            tcgplayerUrl: card.tcgplayer?.url || null,
           },
           update: {
             name: card.name,
@@ -89,7 +89,7 @@ export async function GET(request: Request) {
             rarity: card.rarity ?? null,
             imageSmall: card.images?.small ?? null,
             imageLarge: card.images?.large ?? null,
-            tcgplayerUrl: card.tcgplayer?.url ?? null,
+            tcgplayerUrl: card.tcgplayer?.url || null,
             lastFetchedAt: new Date(),
           },
         })
@@ -108,7 +108,7 @@ export async function GET(request: Request) {
     rarity: card.rarity ?? null,
     imageSmall: card.images?.small ?? null,
     imageLarge: card.images?.large ?? null,
-    tcgplayerUrl: card.tcgplayer?.url ?? null,
+    tcgplayerUrl: card.tcgplayer?.url || null,
   }));
 
   return NextResponse.json({ results });

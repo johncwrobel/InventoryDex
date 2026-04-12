@@ -120,7 +120,7 @@ export async function addInventoryItem(formData: FormData): Promise<ActionResult
         rarity: upstream.rarity ?? null,
         imageSmall: upstream.images?.small ?? null,
         imageLarge: upstream.images?.large ?? null,
-        tcgplayerUrl: upstream.tcgplayer?.url ?? null,
+        tcgplayerUrl: upstream.tcgplayer?.url || null,
       },
       update: {},
     });
