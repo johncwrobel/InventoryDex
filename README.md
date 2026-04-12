@@ -8,16 +8,21 @@ A web-based inventory management tool for Pokémon TCG vendors. Track purchase p
 - **Card search** against pokemontcg.io with a local `Card` table cache shared across users.
 - **Per-user inventory** with condition, finish, quantity, purchase price, list price, and notes — multiple rows per card allowed for different lots.
 - **Responsive inventory list** — table on desktop, stacked cards on mobile. Inline list-price editing and one-click delete.
-- **Price history** snapshots per `(card, finish)` stored in `PricePoint` for upcoming delta badges and "needs attention" filtering.
+- **Price delta badges** — ▲/▼ % change badge on each row when market price moves more than ±5% over 7 days (threshold configurable via env var).
+- **List-price flags** — ⬇ Low / ⬆ High pill when the list price is more than 15% away from market (threshold configurable).
+- **Needs attention filter** — one-click filter that surfaces only rows with a price move or list-price flag.
+- **Card detail page** — large image, full metadata, pricing section, notes, and a Recharts market-price history chart.
+- **Daily price refresh** — Vercel Cron hits `/api/cron/refresh-prices` at 07:00 UTC, inserting a new `PricePoint` per `(card, finish)` for every card in any user's inventory.
+- **PWA** — `manifest.webmanifest` with standalone display and brand red theme; `apple-touch-icon` for iOS "Add to Home Screen."
 
 ### Roadmap
 
 - ✅ **M1 — Bootstrap** — scaffold, Prisma schema on Neon, Auth.js with allowlist, Vercel deploy.
-- ✅ **M2 — Inventory CRUD** — card search, add flow, inventory list, inline edit, delete.
-- ⏳ **M3 — Pricing intelligence** — daily refresh cron, delta badges, "needs attention" filter, card detail with price-history chart.
-- ⏳ **M4 — Polish + PWA** — PWA manifest, Playwright e2e, Vitest unit tests.
+- ✅ **M2 — Inventory CRUD** — card search, add flow, inventory list, inline edit, delete, card detail page.
+- ✅ **M3 — Pricing intelligence** — daily refresh cron, delta badges, "needs attention" filter, card detail with price-history chart.
+- ✅ **M4 — Polish + PWA** — PWA manifest + icons, Vitest unit tests (17), Playwright smoke tests (iPhone 14 + Desktop Chrome).
 
-Camera scan is explicitly out of scope until after M4.
+Camera scan is explicitly deferred (v2).
 
 ## Stack
 
@@ -49,6 +54,11 @@ npm run db:deploy    # prisma migrate deploy — apply pending migrations (prod)
 npm run db:generate  # prisma generate — regenerate the client
 npm run db:studio    # open Prisma Studio
 npm run db:push      # prisma db push — sync schema without a migration (dev only)
+
+# Tests
+npm test             # vitest unit tests
+npm run test:e2e     # playwright smoke tests (run npm run build first;
+                     # first time: npx playwright install chromium)
 ```
 
 See `CLAUDE.md` for working conventions and `.env.example` for the full list of required environment variables.
