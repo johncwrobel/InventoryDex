@@ -229,20 +229,56 @@ export function finishPriceKeys(finish: Finish): TcgPlayerFinishKey[] {
   }
 }
 
+/** All known TCGPlayer finish keys, used for the fallback scan. */
+const ALL_FINISH_KEYS: TcgPlayerFinishKey[] = [
+  "holofoil",
+  "normal",
+  "reverseHolofoil",
+  "1stEditionHolofoil",
+  "1stEditionNormal",
+  "unlimitedHolofoil",
+];
+
 /**
  * Pick the first available TCGPlayer price block for a given finish on a
- * card. Returns `null` if pokemontcg.io has no pricing for that variant.
+ * card.
+ *
+ * When `allowFallback` is true (used by the price-refresh cron and the
+ * add-card action), if the finish-specific keys return nothing we scan all
+ * known keys and return the first block that has at least one non-null price
+ * value. This handles cards where TCGPlayer uses a different finish label than
+ * the one we stored (e.g. a card added as NORMAL that pokemontcg.io only
+ * prices under "holofoil").
+ *
+ * Returns `null` if pokemontcg.io has no pricing for this card at all.
  */
 export function pricesForFinish(
   card: PokemonTcgCard,
   finish: Finish,
+  { allowFallback = false }: { allowFallback?: boolean } = {},
 ): TcgPlayerPriceBlock | null {
   const blocks = card.tcgplayer?.prices;
   if (!blocks) return null;
+
+  // Primary: try the finish-specific keys first.
   for (const key of finishPriceKeys(finish)) {
     const block = blocks[key];
     if (block) return block;
   }
+
+  // Fallback: return the first block that has at least one real price value.
+  if (allowFallback) {
+    for (const key of ALL_FINISH_KEYS) {
+      const block = blocks[key];
+      if (
+        block &&
+        (block.market != null || block.mid != null || block.low != null)
+      ) {
+        return block;
+      }
+    }
+  }
+
   return null;
 }
 

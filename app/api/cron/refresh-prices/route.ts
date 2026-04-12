@@ -63,7 +63,7 @@ export async function POST(request: Request) {
       const finishes = cardFinishes.get(cardId)!;
 
       const inserts = Array.from(finishes).map((finish) => {
-        const block = pricesForFinish(upstream, finish);
+        const block = pricesForFinish(upstream, finish, { allowFallback: true });
         return prisma.pricePoint.create({
           data: {
             cardId,

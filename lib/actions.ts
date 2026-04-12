@@ -141,7 +141,7 @@ export async function addInventoryItem(formData: FormData): Promise<ActionResult
       }
     }
     if (upstream) {
-      const block = pricesForFinish(upstream, input.finish);
+      const block = pricesForFinish(upstream, input.finish, { allowFallback: true });
       if (block) {
         await prisma.pricePoint.create({
           data: {
