@@ -314,7 +314,7 @@ function ScanningView({
     // 9rem ≈ header (44px) + page py-6 top (24px) + h1 (32px) + gap (16px) + buffer
     <div
       className="relative overflow-hidden rounded-xl bg-black"
-      style={{ height: "calc(100dvh - 9rem)" }}
+      style={{ height: "calc(100dvh - 11rem)" }}
     >
       {/* Live camera viewfinder — fills the container, cropped to fit */}
       <video
