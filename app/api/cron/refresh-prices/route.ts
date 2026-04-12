@@ -1,17 +1,25 @@
 /**
  * POST /api/cron/refresh-prices
  *
- * Daily price-refresh cron job invoked by Vercel Cron (schedule: 0 7 * * *).
+ * Price-refresh cron job invoked by Vercel Cron (schedule: 0 *\/8 * * * — 3× per day).
  * Protected by a shared secret in the `x-cron-secret` header — both Vercel
  * and manual `curl` calls must supply it.
  *
  * What it does:
  *  1. Finds every distinct cardId that appears in at least one InventoryItem.
  *  2. For each card, determines which Finish variants are in someone's inventory.
- *  3. Fetches the card's latest data from pokemontcg.io.
+ *  3. Fetches the card's latest data from pokemontcg.io (in batches of 10).
  *  4. Inserts one new PricePoint row per finish variant.
  *
  * Cards with no inventory items are skipped (no point refreshing orphaned data).
+ *
+ * Batching: cards are processed 10 at a time concurrently. Without
+ * POKEMONTCG_API_KEY (100 req/min limit) a 600ms inter-batch pause keeps
+ * throughput safely under the limit. With an API key (1 000 req/min) the
+ * pause is skipped entirely and the job runs ~10× faster.
+ *
+ * POKEMONTCG_API_KEY is strongly recommended for beta deployments — without
+ * it the function may approach Vercel's 60-second timeout for large inventories.
  *
  * Manual test:
  *   curl -X POST \
@@ -23,6 +31,69 @@ import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
 import { getCard, pricesForFinish } from "@/lib/pokemontcg";
 import { Finish, Prisma } from "@prisma/client";
+
+const BATCH_SIZE = 10;
+// Inter-batch pause (ms) when running without an API key to stay under 100 req/min.
+// 10 concurrent requests per batch at 600ms spacing ≈ 60 req/min — safely within limits.
+const NO_KEY_BATCH_DELAY_MS = 600;
+
+interface RefreshCounters {
+  refreshed: number;
+  skipped: number;
+  errors: number;
+}
+
+/**
+ * Refresh a single card: fetch upstream data, insert PricePoints for every
+ * finish variant in inventory, and update the Card metadata row.
+ */
+async function refreshCard(
+  cardId: string,
+  cardFinishes: Map<string, Set<Finish>>,
+  counters: RefreshCounters,
+): Promise<void> {
+  try {
+    const upstream = await getCard(cardId);
+    const finishes = cardFinishes.get(cardId)!;
+
+    const inserts = Array.from(finishes).map((finish) => {
+      const block = pricesForFinish(upstream, finish, { allowFallback: true });
+      return prisma.pricePoint.create({
+        data: {
+          cardId,
+          finish,
+          market: block?.market != null ? new Prisma.Decimal(block.market) : null,
+          low: block?.low != null ? new Prisma.Decimal(block.low) : null,
+          mid: block?.mid != null ? new Prisma.Decimal(block.mid) : null,
+          high: block?.high != null ? new Prisma.Decimal(block.high) : null,
+        },
+      });
+    });
+
+    await Promise.all(inserts);
+    counters.refreshed += inserts.length;
+
+    // Freshen the Card metadata row in case set/name/image/URL changed.
+    await prisma.card.update({
+      where: { id: cardId },
+      data: {
+        name: upstream.name,
+        setId: upstream.set.id,
+        setName: upstream.set.name,
+        number: upstream.number,
+        rarity: upstream.rarity ?? null,
+        imageSmall: upstream.images?.small ?? null,
+        imageLarge: upstream.images?.large ?? null,
+        tcgplayerUrl: upstream.tcgplayer?.url ?? null,
+        lastFetchedAt: new Date(),
+      },
+    });
+  } catch (err) {
+    console.error(`[refresh-prices] failed for cardId=${cardId}`, err);
+    counters.errors++;
+    counters.skipped++;
+  }
+}
 
 export async function POST(request: Request) {
   // --- Auth ---
@@ -51,56 +122,21 @@ export async function POST(request: Request) {
   }
 
   const cardIds = Array.from(cardFinishes.keys());
+  const counters: RefreshCounters = { refreshed: 0, skipped: 0, errors: 0 };
 
-  // --- Refresh each card ---
-  let refreshed = 0;
-  let skipped = 0;
-  let errors = 0;
+  // --- Refresh in batches ---
+  for (let i = 0; i < cardIds.length; i += BATCH_SIZE) {
+    const batch = cardIds.slice(i, i + BATCH_SIZE);
+    await Promise.all(batch.map((id) => refreshCard(id, cardFinishes, counters)));
 
-  for (const cardId of cardIds) {
-    try {
-      const upstream = await getCard(cardId);
-      const finishes = cardFinishes.get(cardId)!;
-
-      const inserts = Array.from(finishes).map((finish) => {
-        const block = pricesForFinish(upstream, finish, { allowFallback: true });
-        return prisma.pricePoint.create({
-          data: {
-            cardId,
-            finish,
-            market: block?.market != null ? new Prisma.Decimal(block.market) : null,
-            low: block?.low != null ? new Prisma.Decimal(block.low) : null,
-            mid: block?.mid != null ? new Prisma.Decimal(block.mid) : null,
-            high: block?.high != null ? new Prisma.Decimal(block.high) : null,
-          },
-        });
-      });
-
-      await Promise.all(inserts);
-      refreshed += inserts.length;
-
-      // Also freshen the Card metadata row in case set/name changed.
-      await prisma.card.update({
-        where: { id: cardId },
-        data: {
-          name: upstream.name,
-          setId: upstream.set.id,
-          setName: upstream.set.name,
-          number: upstream.number,
-          rarity: upstream.rarity ?? null,
-          imageSmall: upstream.images?.small ?? null,
-          imageLarge: upstream.images?.large ?? null,
-          tcgplayerUrl: upstream.tcgplayer?.url ?? null,
-          lastFetchedAt: new Date(),
-        },
-      });
-    } catch (err) {
-      console.error(`[refresh-prices] failed for cardId=${cardId}`, err);
-      errors++;
-      skipped++;
+    // Throttle between batches when running without an API key.
+    const hasMore = i + BATCH_SIZE < cardIds.length;
+    if (!env.POKEMONTCG_API_KEY && hasMore) {
+      await new Promise((r) => setTimeout(r, NO_KEY_BATCH_DELAY_MS));
     }
   }
 
+  const { refreshed, skipped, errors } = counters;
   console.log(`[refresh-prices] done — refreshed=${refreshed} skipped=${skipped} errors=${errors}`);
   return NextResponse.json({ refreshed, skipped, errors });
 }

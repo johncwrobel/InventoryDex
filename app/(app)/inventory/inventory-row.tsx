@@ -27,6 +27,7 @@ export interface InventoryRowData {
     setName: string;
     number: string;
     imageSmall: string | null;
+    tcgplayerUrl: string | null;
   };
   marketPrice: string | null;
   /** % change in market price over the last 7 days. null = not enough history. */
@@ -147,7 +148,19 @@ export function InventoryRow({
           {formatMoney(item.purchasePrice)}
         </td>
         <td className="px-3 py-2 text-right tabular-nums">
-          <div>{formatMoney(item.marketPrice)}</div>
+          {item.card.tcgplayerUrl ? (
+            <a
+              href={item.card.tcgplayerUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="tabular-nums hover:underline"
+              title="View on TCGPlayer"
+            >
+              {formatMoney(item.marketPrice)}
+            </a>
+          ) : (
+            <span>{formatMoney(item.marketPrice)}</span>
+          )}
           <PriceChangeBadge pct={item.priceChangePct} />
         </td>
         <td className="px-3 py-2 text-right">
@@ -243,7 +256,19 @@ export function InventoryRow({
           <div className="text-right">{formatMoney(item.purchasePrice)}</div>
           <div className="text-neutral-500">Market</div>
           <div className="text-right">
-            {formatMoney(item.marketPrice)}
+            {item.card.tcgplayerUrl ? (
+              <a
+                href={item.card.tcgplayerUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="tabular-nums hover:underline"
+                title="View on TCGPlayer"
+              >
+                {formatMoney(item.marketPrice)}
+              </a>
+            ) : (
+              <span>{formatMoney(item.marketPrice)}</span>
+            )}
             <PriceChangeBadge pct={item.priceChangePct} />
           </div>
           <div className="text-neutral-500">List</div>

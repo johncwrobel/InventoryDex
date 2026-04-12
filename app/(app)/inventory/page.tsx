@@ -96,6 +96,7 @@ export default async function InventoryPage({
         setName: item.card.setName,
         number: item.card.number,
         imageSmall: item.card.imageSmall,
+        tcgplayerUrl: item.card.tcgplayerUrl,
       },
       marketPrice,
       priceChangePct,
