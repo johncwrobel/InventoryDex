@@ -17,6 +17,14 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "InventoryDex",
   description: "Pokémon TCG inventory tracking for vendors.",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "InventoryDex",
+  },
+  icons: {
+    apple: "/icons/icon-192.png",
+  },
 };
 
 export default function RootLayout({

@@ -37,7 +37,11 @@ npm run db:studio    # open Prisma Studio
 npm run db:push      # prisma db push (dev-only, skips migration history)
 ```
 
-Test commands will be added here as they're introduced.
+npm test             # vitest unit tests (tests/*.test.ts)
+npm run test:watch   # vitest in watch mode
+npm run test:e2e     # playwright smoke tests (tests/e2e/*.spec.ts)
+                     # requires: npx playwright install chromium (first time)
+                     # requires: npm run build && npm run start (or a running dev server)
 
 ## Important: Next.js 16 specifics
 
@@ -80,7 +84,13 @@ Don't `import type { Foo } from "@/app/api/**/route"` in client components — e
 ### pokemontcg.io integration
 - `lib/pokemontcg.ts` wraps the upstream REST API. Only call it from server code.
 - `finishPriceKeys()` / `pricesForFinish()` handle the fact that TCGPlayer exposes different price blocks per finish variant (`normal`, `holofoil`, `1stEditionHolofoil`, etc.), and some variants are missing on some cards.
+- `pricesForFinish(card, finish, { allowFallback: true })` — pass `allowFallback` in the cron and add-card action so cards where TCGPlayer uses a different finish key than the stored one still get real prices instead of all-null rows.
 - The `/api/cards/search` route upserts every returned card into the local `Card` table, so the subsequent add action usually hits cache. It still re-fetches defensively if the card is missing.
+
+### Pricing intelligence
+- `lib/pricing.ts` — pure functions (`recentChange`, `classifyListPrice`) with no DB/Prisma dependency. Safe to import in both server components and unit tests.
+- `recentChange(history, days)` requires at least 50% of the requested window to be present in history, or returns null. Prevents misleading badges from sparse data.
+- Unit tests live in `tests/pricing.test.ts`.
 
 ### Styling conventions
 - Tailwind v4 with `@import "tailwindcss"` in `app/globals.css`. No `tailwind.config.js` — use `@theme` blocks and `@layer components` directly in CSS.
