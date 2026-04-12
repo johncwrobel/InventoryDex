@@ -310,51 +310,62 @@ function ScanningView({
   }, [cameraError, onCameraError]);
 
   return (
-    <div className="space-y-3">
-      <div className="relative overflow-hidden rounded-xl bg-black">
-        {/* Live camera viewfinder */}
-        <video
-          ref={videoRef}
-          className="h-auto w-full"
-          playsInline
-          muted
-          autoPlay
-        />
+    // Fill the viewport below the header + page title so no scrolling is needed.
+    // 9rem ≈ header (44px) + page py-6 top (24px) + h1 (32px) + gap (16px) + buffer
+    <div
+      className="relative overflow-hidden rounded-xl bg-black"
+      style={{ height: "calc(100dvh - 9rem)" }}
+    >
+      {/* Live camera viewfinder — fills the container, cropped to fit */}
+      <video
+        ref={videoRef}
+        className="h-full w-full object-cover"
+        playsInline
+        muted
+        autoPlay
+      />
 
-        {/* Guide overlay — hints user to align card name at the top */}
-        {cameraReady && (
-          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-start pt-[8%]">
-            <div className="w-[85%] rounded-lg border-2 border-white/70 px-3 py-2 text-center">
-              <span className="text-xs font-medium text-white/80 drop-shadow">
-                Align card name here
-              </span>
-            </div>
+      {/* Scanning zone overlay — shaded bottom 70%, clear top 30% = OCR crop area */}
+      {cameraReady && (
+        <div className="pointer-events-none absolute inset-0">
+          {/* Dark overlay below the scanning zone */}
+          <div className="absolute inset-x-0 bottom-0 bg-black/50" style={{ top: "30%" }} />
+          {/* Scanning zone border */}
+          <div
+            className="absolute inset-x-4 border-2 border-white/60 rounded-lg"
+            style={{ top: "4%", height: "24%" }}
+          >
+            <span className="absolute bottom-1 left-0 right-0 text-center text-[11px] font-medium text-white/80 drop-shadow">
+              Card name zone
+            </span>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Loading indicator while camera warms up */}
-        {!cameraReady && !cameraError && (
-          <div className="flex h-48 items-center justify-center">
-            <span className="text-sm text-white/60">Starting camera…</span>
-          </div>
-        )}
-      </div>
-
-      <div className="flex items-center justify-center gap-4">
+      {/* Capture button — overlaid at bottom of viewfinder */}
+      <div className="absolute bottom-6 left-0 right-0 flex flex-col items-center gap-2">
         <button
           type="button"
           onClick={onCapture}
           disabled={!cameraReady}
-          className="flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-lg ring-2 ring-red-600 transition hover:bg-red-50 disabled:opacity-40"
+          className="flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-lg ring-2 ring-red-600 transition active:scale-95 disabled:opacity-40"
           aria-label="Capture"
         >
           <span className="h-10 w-10 rounded-full bg-red-600" />
         </button>
+        {cameraReady && (
+          <p className="text-xs text-white/70 drop-shadow">
+            Tap to identify card
+          </p>
+        )}
       </div>
 
-      <p className="text-center text-xs text-neutral-500 dark:text-neutral-400">
-        Tap the button to capture and identify the card
-      </p>
+      {/* Loading indicator while camera warms up */}
+      {!cameraReady && !cameraError && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-sm text-white/60">Starting camera…</span>
+        </div>
+      )}
     </div>
   );
 }
