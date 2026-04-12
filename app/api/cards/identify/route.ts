@@ -1,12 +1,14 @@
 /**
- * GET /api/cards/identify?q=<name>
+ * GET /api/cards/identify?q=<name>&number=<cardNumber>
  *
- * Used by the scan feature. Like /api/cards/search but also returns the best
- * available TCGPlayer market price for each result, so the scan UI can show
- * market price without a separate request.
+ * Used by the scan feature. Accepts an OCR-extracted card name and/or card
+ * number and returns matching cards with their best available TCGPlayer market
+ * price.
  *
- * Returns the top 5 matches — the scan flow only needs a small result set to
- * surface the best match and a few alternatives.
+ * Search strategy (most → least specific):
+ *   1. name + number  → compound query, up to 5 results (should be 1–2)
+ *   2. number only    → up to 20 results (many cards share a number across sets)
+ *   3. name only      → up to 8 results
  *
  * Auth: any signed-in user.
  */
@@ -25,14 +27,26 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const q = searchParams.get("q")?.trim() ?? "";
+  const number = searchParams.get("number")?.trim() ?? "";
 
-  if (q.length < 2) {
+  // Need at least a 2-char name or a card number.
+  if (q.length < 2 && !number) {
     return NextResponse.json({ results: [] satisfies ScanMatch[] });
   }
 
+  // Determine page size based on how specific the query is.
+  // number+name → very specific → 5 results
+  // number only → moderately specific (shared across sets) → 20 results
+  // name only → least specific → 8 results
+  const pageSize = number ? (q.length >= 2 ? 5 : 20) : 8;
+
   let upstream: PokemonTcgCard[];
   try {
-    upstream = await searchCards({ query: q, pageSize: 5 });
+    upstream = await searchCards({
+      query: q.length >= 2 ? q : undefined,
+      cardNumber: number || undefined,
+      pageSize,
+    });
   } catch (err) {
     console.error("[cards/identify] upstream error", err);
     return NextResponse.json(
@@ -77,8 +91,6 @@ export async function GET(request: Request) {
   );
 
   const results: ScanMatch[] = upstream.map((card) => {
-    // Try to extract a market price. Use allowFallback so cards where TCGPlayer
-    // uses a different finish key than "normal" still get a price shown.
     const priceBlock = pricesForFinish(card, "NORMAL", { allowFallback: true });
     const marketPrice = priceBlock?.market ?? null;
 

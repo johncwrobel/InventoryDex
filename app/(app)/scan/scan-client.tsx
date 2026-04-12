@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import type { ScanMatch } from "@/lib/scan-types";
 import { addInventoryItem } from "@/lib/actions";
 import { useCamera } from "./use-camera";
-import { useOcr } from "./use-ocr";
+import { useOcr, type CardOcrResult } from "./use-ocr";
 
 // ---------- Constants (mirrors add-card-client.tsx) ----------
 
@@ -31,7 +31,7 @@ type ScanState =
   | { kind: "idle" }
   | { kind: "scanning" }
   | { kind: "processing"; progress: number }
-  | { kind: "result"; matches: ScanMatch[]; extractedText: string }
+  | { kind: "result"; matches: ScanMatch[]; ocr: CardOcrResult }
   | { kind: "add-form"; match: ScanMatch }
   | { kind: "added"; cardName: string }
   | { kind: "error"; message: string };
@@ -104,58 +104,57 @@ export function ScanClient() {
 
     setState({ kind: "processing", progress: 0 });
 
-    let extractedText = "";
+    // Run dual-pass OCR: number from the bottom (reliable), name from the top (best-effort).
+    let ocrResult: CardOcrResult = { name: "", number: "" };
     try {
-      extractedText = await ocr.recognize(blob);
+      ocrResult = await ocr.recognizeCard(blob);
     } catch {
+      setState({ kind: "error", message: "OCR failed. Make sure the card is clearly visible and try again." });
+      return;
+    }
+
+    const { name, number } = ocrResult;
+
+    // Need at least a card number or a 2+ char name to search.
+    if (!number && name.length < 2) {
       setState({
         kind: "error",
-        message: "OCR failed. Make sure the card name is clearly visible.",
+        message: "Couldn't read the card. Make sure the full card is visible — especially the number at the bottom — and try again.",
       });
       return;
     }
 
-    if (extractedText.length < 2) {
-      setState({
-        kind: "error",
-        message:
-          "Couldn't read the card name. Make sure the card name is clearly visible at the top of the frame and try again.",
-      });
-      return;
-    }
+    // Build the search URL. Number is the primary signal; name is a secondary filter.
+    const params = new URLSearchParams();
+    if (name.length >= 2) params.set("q", name);
+    if (number) params.set("number", number);
 
-    // Search for the card using the OCR-extracted name.
     let matches: ScanMatch[] = [];
     try {
-      const res = await fetch(
-        `/api/cards/identify?q=${encodeURIComponent(extractedText)}`,
-      );
+      const res = await fetch(`/api/cards/identify?${params.toString()}`);
       if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as
-          | { error?: string }
-          | null;
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
         throw new Error(body?.error ?? `Search failed (${res.status})`);
       }
       const body = (await res.json()) as { results: ScanMatch[] };
       matches = body.results;
     } catch (err) {
-      setState({
-        kind: "error",
-        message: (err as Error).message ?? "Search failed. Check your connection.",
-      });
+      setState({ kind: "error", message: (err as Error).message ?? "Search failed. Check your connection." });
       return;
     }
 
     if (matches.length === 0) {
       setState({
         kind: "error",
-        message: `No cards found matching "${extractedText}". Reposition and try again, or search manually.`,
+        message: number
+          ? `No cards found for number ${number}${name ? ` / "${name}"` : ""}. Reposition and try again, or search manually.`
+          : `No cards found for "${name}". Reposition and try again, or search manually.`,
       });
       return;
     }
 
     camera.stop();
-    setState({ kind: "result", matches, extractedText });
+    setState({ kind: "result", matches, ocr: ocrResult });
     setShowAlternatives(false);
   }
 
@@ -165,7 +164,7 @@ export function ScanClient() {
       matches: [match, ...((state as { matches: ScanMatch[] }).matches.filter(
         (m) => m.card.id !== match.card.id,
       ))],
-      extractedText: (state as { extractedText: string }).extractedText,
+      ocr: (state as { ocr: CardOcrResult }).ocr,
     });
     setShowAlternatives(false);
   }
@@ -184,7 +183,7 @@ export function ScanClient() {
 
   function handleCancelForm() {
     if (state.kind === "add-form") {
-      setState({ kind: "result", matches: [state.match], extractedText: "" });
+      setState({ kind: "result", matches: [state.match], ocr: { name: "", number: "" } });
     }
   }
 
@@ -236,7 +235,7 @@ export function ScanClient() {
       {state.kind === "result" && (
         <ResultView
           matches={state.matches}
-          extractedText={state.extractedText}
+          ocr={state.ocr}
           showAlternatives={showAlternatives}
           onToggleAlternatives={() => setShowAlternatives((v) => !v)}
           onSelectAlternative={handleSelectAlternative}
@@ -325,18 +324,25 @@ function ScanningView({
         autoPlay
       />
 
-      {/* Scanning zone overlay — shaded bottom 70%, clear top 30% = OCR crop area */}
+      {/* Guide overlay — two highlighted zones matching the OCR crop regions */}
       {cameraReady && (
         <div className="pointer-events-none absolute inset-0">
-          {/* Dark overlay below the scanning zone */}
-          <div className="absolute inset-x-0 bottom-0 bg-black/50" style={{ top: "30%" }} />
-          {/* Scanning zone border */}
+          {/* Name zone: top 20% */}
           <div
-            className="absolute inset-x-4 border-2 border-white/60 rounded-lg"
-            style={{ top: "4%", height: "24%" }}
+            className="absolute inset-x-4 rounded-lg border-2 border-yellow-300/80"
+            style={{ top: "3%", height: "17%" }}
           >
-            <span className="absolute bottom-1 left-0 right-0 text-center text-[11px] font-medium text-white/80 drop-shadow">
-              Card name zone
+            <span className="absolute -top-5 left-0 right-0 text-center text-[11px] font-semibold text-yellow-300 drop-shadow">
+              Card name
+            </span>
+          </div>
+          {/* Number zone: bottom 18%, above the capture button */}
+          <div
+            className="absolute inset-x-4 rounded-lg border-2 border-blue-300/80"
+            style={{ bottom: "22%", height: "15%" }}
+          >
+            <span className="absolute -bottom-5 left-0 right-0 text-center text-[11px] font-semibold text-blue-300 drop-shadow">
+              Card number
             </span>
           </div>
         </div>
@@ -392,7 +398,7 @@ function ProcessingView({ progress }: { progress: number }) {
 
 function ResultView({
   matches,
-  extractedText,
+  ocr,
   showAlternatives,
   onToggleAlternatives,
   onSelectAlternative,
@@ -400,7 +406,7 @@ function ResultView({
   onDismiss,
 }: {
   matches: ScanMatch[];
-  extractedText: string;
+  ocr: CardOcrResult;
   showAlternatives: boolean;
   onToggleAlternatives: () => void;
   onSelectAlternative: (m: ScanMatch) => void;
@@ -524,9 +530,9 @@ function ResultView({
         </div>
       )}
 
-      {extractedText && (
+      {(ocr.name || ocr.number) && (
         <p className="text-xs text-neutral-400 dark:text-neutral-500">
-          Read: &ldquo;{extractedText}&rdquo;
+          Read:{ocr.name ? ` name &ldquo;${ocr.name}&rdquo;` : ""}{ocr.number ? ` · #${ocr.number}` : ""}
         </p>
       )}
     </div>

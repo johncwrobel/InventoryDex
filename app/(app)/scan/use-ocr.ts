@@ -3,25 +3,32 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import type { Worker } from "tesseract.js";
 
+export interface CardOcrResult {
+  /** Best-effort card name from the top of the card. Empty string if unreadable. */
+  name: string;
+  /** Collector number (numerator only, e.g. "025") from the bottom of the card. Empty if unreadable. */
+  number: string;
+}
+
 interface UseOcrReturn {
-  recognize: (blob: Blob) => Promise<string>;
+  recognizeCard: (blob: Blob) => Promise<CardOcrResult>;
   progress: number; // 0–1
   busy: boolean;
 }
 
 /**
- * Wraps Tesseract.js with lazy worker initialization.
+ * Dual-pass OCR strategy for Pokémon cards:
  *
- * OCR strategy:
- *   - Crop to the top 30% of the frame (the guide overlay marks this region).
- *   - Convert to grayscale and auto-invert dark-background cards so Tesseract
- *     always receives dark-text-on-light regardless of card type.
- *   - Scale the crop up 2× before OCR — Tesseract accuracy improves
- *     significantly with larger text.
- *   - PSM 6 (uniform block of text) — more robust than PSM 7 (single line)
- *     when the crop might contain the name line plus a subtitle/type line.
- *   - No character whitelist — Pokemon card names include accented chars (é),
- *     colons (Type: Null), hyphens, numbers, etc. A whitelist causes misses.
+ * Pass 1 — Card number (bottom 18% of frame, PSM 7 single-line, digits-only whitelist)
+ *   The collector number "025/165" uses plain numerals — a reliable OCR target.
+ *   We extract only the numerator ("025") which is what pokemontcg.io searches by.
+ *
+ * Pass 2 — Card name (top 20% of frame, PSM 6 text block, no whitelist)
+ *   The name uses a stylised font so results are best-effort. Even a partial
+ *   match narrows the search considerably when combined with the number.
+ *
+ * Both crops are converted to grayscale and auto-inverted for dark-background
+ * cards before being passed to Tesseract.
  */
 export function useOcr(): UseOcrReturn {
   const workerRef = useRef<Worker | null>(null);
@@ -30,8 +37,6 @@ export function useOcr(): UseOcrReturn {
 
   const getWorker = useCallback(async (): Promise<Worker> => {
     if (workerRef.current) return workerRef.current;
-
-    // Dynamic import keeps Tesseract.js out of the initial bundle.
     const { createWorker } = await import("tesseract.js");
     const worker = await createWorker("eng", 1, {
       logger: (m: { status: string; progress: number }) => {
@@ -40,27 +45,37 @@ export function useOcr(): UseOcrReturn {
         }
       },
     });
-    await worker.setParameters({
-      // PSM 6 = assume a uniform block of text. More forgiving than PSM 7
-      // (single line) when the crop includes a type/subtype line below the name.
-      // @ts-expect-error — tesseract.js types don't expose PSM constants
-      tessedit_pageseg_mode: "6",
-      // No whitelist — card names include characters not in plain ASCII:
-      // é, -, :, (, ), numbers, etc. Trust Tesseract's own filtering.
-    });
     workerRef.current = worker;
     return worker;
   }, []);
 
-  const recognize = useCallback(
-    async (blob: Blob): Promise<string> => {
+  const recognizeCard = useCallback(
+    async (blob: Blob): Promise<CardOcrResult> => {
       setBusy(true);
       setProgress(0);
       try {
-        const preprocessed = await preprocessImage(blob);
         const worker = await getWorker();
-        const { data } = await worker.recognize(preprocessed);
-        return cleanOcrText(data.text);
+
+        // ── Pass 1: card number from bottom ──────────────────────────────────
+        // Digits-only whitelist + PSM 7 (single line) = high accuracy for numerals.
+        // @ts-expect-error tesseract.js types don't expose PSM constants
+        await worker.setParameters({ tessedit_pageseg_mode: "7", tessedit_char_whitelist: "0123456789/" });
+        const bottomCrop = await preprocessRegion(blob, "bottom");
+        const { data: bottomData } = await worker.recognize(bottomCrop);
+        const number = extractCardNumber(bottomData.text);
+
+        setProgress(0.5);
+
+        // ── Pass 2: card name from top ────────────────────────────────────────
+        // No whitelist so accented chars, hyphens, colons etc. are preserved.
+        // PSM 6 (uniform block) is more forgiving than PSM 7 for styled text.
+        // @ts-expect-error tesseract.js types don't expose PSM constants
+        await worker.setParameters({ tessedit_pageseg_mode: "6", tessedit_char_whitelist: "" });
+        const topCrop = await preprocessRegion(blob, "top");
+        const { data: topData } = await worker.recognize(topCrop);
+        const name = cleanNameText(topData.text);
+
+        return { name, number };
       } finally {
         setBusy(false);
         setProgress(0);
@@ -69,25 +84,22 @@ export function useOcr(): UseOcrReturn {
     [getWorker],
   );
 
-  // Terminate the worker on unmount to free WASM memory.
   useEffect(() => {
-    return () => {
-      workerRef.current?.terminate();
-    };
+    return () => { workerRef.current?.terminate(); };
   }, []);
 
-  return { recognize, progress, busy };
+  return { recognizeCard, progress, busy };
 }
 
+// ---------- Image preprocessing ----------
+
 /**
- * Preprocess a camera frame for OCR:
- *   1. Crop to the top 30% (matches the guide zone in the UI).
- *   2. Scale up 2× so Tesseract has larger text to work with.
- *   3. Convert to grayscale.
- *   4. Auto-invert if the background is dark (dark-type, psychic cards, etc.)
- *      so Tesseract always sees dark text on a light background.
+ * Crop + preprocess a region of a camera-frame Blob for OCR:
+ *   - "top"    → top 20% of frame  (card name)
+ *   - "bottom" → bottom 18% of frame (collector number)
+ * Steps: crop → scale 2× → grayscale → auto-invert if dark background → PNG
  */
-async function preprocessImage(blob: Blob): Promise<Blob> {
+async function preprocessRegion(blob: Blob, region: "top" | "bottom"): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(blob);
@@ -95,94 +107,69 @@ async function preprocessImage(blob: Blob): Promise<Blob> {
     img.onload = () => {
       URL.revokeObjectURL(url);
 
-      const cropHeight = Math.floor(img.height * 0.30);
+      const fraction = region === "top" ? 0.20 : 0.18;
+      const cropH = Math.floor(img.height * fraction);
+      const srcY = region === "top" ? 0 : img.height - cropH;
       const scale = 2;
 
       const canvas = document.createElement("canvas");
       canvas.width = img.width * scale;
-      canvas.height = cropHeight * scale;
+      canvas.height = cropH * scale;
 
       const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        resolve(blob);
-        return;
-      }
+      if (!ctx) { resolve(blob); return; }
 
-      // Draw the top 30% of the image scaled up 2×.
-      ctx.drawImage(
-        img,
-        0, 0, img.width, cropHeight,   // source rect
-        0, 0, canvas.width, canvas.height, // dest rect
-      );
+      ctx.drawImage(img, 0, srcY, img.width, cropH, 0, 0, canvas.width, canvas.height);
 
-      // Convert to grayscale via pixel manipulation.
+      // Grayscale + auto-invert
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const data = imageData.data;
-      let totalLuminance = 0;
-
-      for (let i = 0; i < data.length; i += 4) {
-        // Standard luminance weights (Rec. 709)
-        const gray = Math.round(0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]);
-        data[i] = gray;
-        data[i + 1] = gray;
-        data[i + 2] = gray;
-        totalLuminance += gray;
+      const d = imageData.data;
+      let total = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        const g = Math.round(0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]);
+        d[i] = d[i + 1] = d[i + 2] = g;
+        total += g;
       }
-
-      // If the average luminance is below 110 the background is dark — invert
-      // so Tesseract sees dark text on a light background in all cases.
-      const avgLuminance = totalLuminance / (canvas.width * canvas.height);
-      if (avgLuminance < 110) {
-        for (let i = 0; i < data.length; i += 4) {
-          data[i] = 255 - data[i];
-          data[i + 1] = 255 - data[i + 1];
-          data[i + 2] = 255 - data[i + 2];
+      if (total / (canvas.width * canvas.height) < 110) {
+        for (let i = 0; i < d.length; i += 4) {
+          d[i] = 255 - d[i];
+          d[i + 1] = 255 - d[i + 1];
+          d[i + 2] = 255 - d[i + 2];
         }
       }
-
       ctx.putImageData(imageData, 0, 0);
 
-      canvas.toBlob(
-        (result) => {
-          if (result) resolve(result);
-          else resolve(blob);
-        },
-        "image/png", // PNG avoids JPEG compression artifacts on text edges
-      );
+      canvas.toBlob((result) => resolve(result ?? blob), "image/png");
     };
 
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("Failed to load image for preprocessing"));
-    };
-
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Image load failed")); };
     img.src = url;
   });
 }
 
+// ---------- Text cleaning ----------
+
 /**
- * Clean raw OCR output into a usable card-name search string.
- *
- * - Take the first non-empty line (the card name is always the topmost text)
- * - Strip trailing HP numbers like "120" or "120 HP"
- * - Collapse multiple spaces, trim
- * - Remove stray single characters that are OCR noise
+ * Extract the collector number numerator from raw OCR output.
+ * e.g. "025/165" → "025", "  4/102 " → "4", "SWSH001" → "" (promo — skip)
+ * Strips leading zeros to match pokemontcg.io's number field (which stores "25" not "025").
  */
-function cleanOcrText(raw: string): string {
-  const lines = raw
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l.length > 1); // discard single-char lines (OCR noise)
+function extractCardNumber(raw: string): string {
+  const match = raw.replace(/\s/g, "").match(/^(\d{1,3})\/\d{1,3}$/);
+  if (!match) return "";
+  // pokemontcg.io stores numbers without leading zeros for most cards.
+  return String(parseInt(match[1], 10));
+}
 
-  if (lines.length === 0) return "";
-
-  // The card name is the first substantive line. Subsequent lines are the
-  // stage/type line ("Stage 1", "Basic Pokémon", etc.) — discard them.
-  const firstLine = lines[0];
-
-  return firstLine
-    .replace(/\s+\d+\s*HP\s*$/i, "") // strip "120 HP" suffix
-    .replace(/\s+\d+$/, "")           // strip trailing lone numbers
+/**
+ * Clean the name OCR output: first substantive line, strip HP suffix, collapse spaces.
+ */
+function cleanNameText(raw: string): string {
+  const lines = raw.split("\n").map((l) => l.trim()).filter((l) => l.length > 1);
+  if (!lines.length) return "";
+  return lines[0]
+    .replace(/\s+\d+\s*HP\s*$/i, "")
+    .replace(/\s+\d+$/, "")
     .replace(/\s{2,}/g, " ")
     .trim();
 }

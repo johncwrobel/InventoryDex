@@ -100,6 +100,8 @@ export const CARD_SEARCH_SORTS: readonly CardSearchSort[] = [
 export interface SearchCardsOptions {
   query?: string;
   setId?: string;
+  /** Collector number (e.g. "025"). Translates to `number:<n>` in the query. */
+  cardNumber?: string;
   sort?: CardSearchSort;
   pageSize?: number;
 }
@@ -118,9 +120,10 @@ export interface SearchCardsOptions {
 export async function searchCards(
   options: SearchCardsOptions,
 ): Promise<PokemonTcgCard[]> {
-  const { query, setId, sort = "releaseDate:desc", pageSize = 24 } = options;
+  const { query, setId, cardNumber, sort = "releaseDate:desc", pageSize = 24 } = options;
   const trimmed = query?.trim() ?? "";
-  if (!trimmed && !setId) return [];
+  // Require at least one of: name query, set id, or card number.
+  if (!trimmed && !setId && !cardNumber) return [];
 
   const clauses: string[] = [];
   if (trimmed) {
@@ -131,6 +134,11 @@ export async function searchCards(
   if (setId) {
     // pokemontcg.io set ids are alphanumerics + hyphens, safe to inline.
     clauses.push(`set.id:${setId}`);
+  }
+  if (cardNumber) {
+    // Strip anything that isn't alphanumeric to prevent query injection.
+    const safeNumber = cardNumber.replace(/[^a-zA-Z0-9]/g, "");
+    if (safeNumber) clauses.push(`number:${safeNumber}`);
   }
 
   const params = new URLSearchParams({
