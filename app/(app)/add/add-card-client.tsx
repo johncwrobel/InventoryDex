@@ -56,6 +56,7 @@ export function AddCardClient() {
   const [selected, setSelected] = useState<CardSearchResult | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [isGraded, setIsGraded] = useState(false);
   const [pending, startTransition] = useTransition();
 
   // Load the set list once on mount. The server caches the upstream
@@ -164,6 +165,7 @@ export function AddCardClient() {
             setSelected(null);
             setFormError(null);
             setFieldErrors({});
+            setIsGraded(false);
           }}
           className="text-sm text-neutral-600 underline underline-offset-2 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
         >
@@ -203,20 +205,39 @@ export function AddCardClient() {
         <form action={handleSubmit} className="space-y-4">
           <input type="hidden" name="cardId" value={selected.id} />
 
+          {/* Graded card toggle */}
+          <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-black/10 px-3 py-2.5 hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5">
+            <input
+              type="checkbox"
+              name="isGraded"
+              value="on"
+              checked={isGraded}
+              onChange={(e) => setIsGraded(e.target.checked)}
+              className="h-4 w-4 rounded accent-red-600"
+            />
+            <span className="text-sm font-medium">Graded card</span>
+            <span className="text-xs text-neutral-500 dark:text-neutral-400">PSA, BGS, CGC, etc.</span>
+          </label>
+
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Condition" error={fieldErrors.condition}>
-              <select
-                name="condition"
-                defaultValue="NEAR_MINT"
-                className="input-base"
-              >
-                {CONDITIONS.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
+            {/* Condition — hidden when graded (NEAR_MINT saved as placeholder) */}
+            {isGraded ? (
+              <input type="hidden" name="condition" value="NEAR_MINT" />
+            ) : (
+              <Field label="Condition" error={fieldErrors.condition}>
+                <select
+                  name="condition"
+                  defaultValue="NEAR_MINT"
+                  className="input-base"
+                >
+                  {CONDITIONS.map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
 
             <Field label="Finish" error={fieldErrors.finish}>
               <select name="finish" defaultValue="NORMAL" className="input-base">
@@ -227,6 +248,39 @@ export function AddCardClient() {
                 ))}
               </select>
             </Field>
+
+            {/* Grading company + grade — visible only when isGraded */}
+            {isGraded && (
+              <>
+                <Field label="Grading company" error={fieldErrors.gradingCompany}>
+                  <input
+                    type="text"
+                    name="gradingCompany"
+                    list="grading-companies"
+                    placeholder="e.g. PSA, BGS, CGC"
+                    className="input-base"
+                    autoComplete="off"
+                  />
+                  <datalist id="grading-companies">
+                    <option value="PSA" />
+                    <option value="BGS" />
+                    <option value="CGC" />
+                    <option value="SGC" />
+                    <option value="HGA" />
+                    <option value="ACE" />
+                  </datalist>
+                </Field>
+
+                <Field label="Grade" error={fieldErrors.grade}>
+                  <input
+                    type="text"
+                    name="grade"
+                    placeholder="e.g. 10, 9.5, Pristine"
+                    className="input-base"
+                  />
+                </Field>
+              </>
+            )}
 
             <Field label="Quantity" error={fieldErrors.quantity}>
               <input

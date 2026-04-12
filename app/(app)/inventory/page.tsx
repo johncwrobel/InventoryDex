@@ -101,6 +101,9 @@ export default async function InventoryPage({
       marketPrice,
       priceChangePct,
       listFlag,
+      isGraded: item.isGraded,
+      gradingCompany: item.gradingCompany,
+      grade: item.grade,
     };
   });
 

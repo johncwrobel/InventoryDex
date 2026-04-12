@@ -88,19 +88,25 @@ model Card {
 // A single vendor's copy (or stack of copies) of a card.
 // Multiple rows per card allowed — different condition / finish / purchase lots.
 model InventoryItem {
-  id            String    @id @default(cuid())
-  userId        String
-  cardId        String
-  quantity      Int       @default(1)
-  condition     Condition @default(NEAR_MINT)
-  finish        Finish    @default(NORMAL)
-  language      String    @default("EN")
-  purchasePrice Decimal   @db.Decimal(10, 2) // what the vendor paid
-  purchasedAt   DateTime?
-  listPrice     Decimal?  @db.Decimal(10, 2) // vendor's asking price
-  notes         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id             String    @id @default(cuid())
+  userId         String
+  cardId         String
+  quantity       Int       @default(1)
+  condition      Condition @default(NEAR_MINT)
+  finish         Finish    @default(NORMAL)
+  language       String    @default("EN")
+  purchasePrice  Decimal   @db.Decimal(10, 2) // what the vendor paid
+  purchasedAt    DateTime?
+  listPrice      Decimal?  @db.Decimal(10, 2) // vendor's asking price
+  notes          String?
+  // Graded card fields — isGraded=false means a raw card (condition used normally).
+  // When isGraded=true, condition is stored as NEAR_MINT but hidden from the UI;
+  // gradingCompany and grade are the authoritative condition descriptor.
+  isGraded       Boolean   @default(false)
+  gradingCompany String?   // e.g. "PSA", "BGS", "CGC"
+  grade          String?   // e.g. "10", "9.5", "Pristine"
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   card Card @relation(fields: [cardId], references: [id])

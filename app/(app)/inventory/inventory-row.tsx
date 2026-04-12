@@ -34,6 +34,9 @@ export interface InventoryRowData {
   priceChangePct: number | null;
   /** Whether the list price is significantly above/below market. */
   listFlag: "underpriced" | "overpriced" | null;
+  isGraded: boolean;
+  gradingCompany: string | null;
+  grade: string | null;
 }
 
 const CONDITION_LABELS: Record<string, string> = {
@@ -51,6 +54,11 @@ const FINISH_LABELS: Record<string, string> = {
   REVERSE_HOLO: "Rev Holo",
   FIRST_ED_HOLO: "1st Ed Holo",
 };
+
+function gradedLabel(company: string | null, grade: string | null): string {
+  if (company && grade) return `${company} ${grade}`;
+  return grade ?? company ?? "Graded";
+}
 
 function formatMoney(value: string | null): string {
   if (value == null) return "—";
@@ -138,8 +146,16 @@ export function InventoryRow({
           </Link>
         </td>
         <td className="px-3 py-2 text-xs">
-          <div>{CONDITION_LABELS[item.condition] ?? item.condition}</div>
-          <div className="text-neutral-500">
+          {item.isGraded ? (
+            <div>
+              <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                {gradedLabel(item.gradingCompany, item.grade)}
+              </span>
+            </div>
+          ) : (
+            <div>{CONDITION_LABELS[item.condition] ?? item.condition}</div>
+          )}
+          <div className="mt-0.5 text-neutral-500">
             {FINISH_LABELS[item.finish] ?? item.finish}
           </div>
         </td>
@@ -248,8 +264,14 @@ export function InventoryRow({
           </div>
         </Link>
         <div className="text-xs text-neutral-600 dark:text-neutral-400">
-          {CONDITION_LABELS[item.condition] ?? item.condition} ·{" "}
-          {FINISH_LABELS[item.finish] ?? item.finish} · qty {item.quantity}
+          {item.isGraded ? (
+            <span className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+              {gradedLabel(item.gradingCompany, item.grade)}
+            </span>
+          ) : (
+            CONDITION_LABELS[item.condition] ?? item.condition
+          )}{" "}
+          · {FINISH_LABELS[item.finish] ?? item.finish} · qty {item.quantity}
         </div>
         <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 pt-1 text-xs tabular-nums">
           <div className="text-neutral-500">Paid</div>

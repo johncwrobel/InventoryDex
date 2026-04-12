@@ -53,7 +53,7 @@ Next.js 16 has breaking changes from prior versions. **Before writing any Next-s
 Three domain tables sit alongside the Auth.js tables:
 
 - **`Card`** — canonical pokemontcg.io card metadata (name, set, images, TCGPlayer URL). Keyed by the upstream id (e.g. `sv1-25`) and **shared across all users** so we fetch/cache each unique card once.
-- **`InventoryItem`** — one vendor's copy of a card. Multiple rows per card are allowed (different condition / finish / purchase lots). Owns `purchasePrice`, `listPrice`, `quantity`, `condition`, `finish`, `notes`. Scoped to `userId`.
+- **`InventoryItem`** — one vendor's copy of a card. Multiple rows per card are allowed (different condition / finish / purchase lots). Owns `purchasePrice`, `listPrice`, `quantity`, `condition`, `finish`, `notes`. Scoped to `userId`. Also supports graded cards via `isGraded` (boolean), `gradingCompany` (e.g. "PSA"), and `grade` (e.g. "10"). When `isGraded=true`, `condition` is stored as `NEAR_MINT` as a DB placeholder and is hidden from the UI; `gradingCompany` and `grade` are the authoritative condition descriptor. Market pricing for graded cards is not yet implemented.
 - **`PricePoint`** — historical market-price snapshots per `(cardId, finish)`. Enables "recent change over N days" math. Never mutate existing rows — always insert a new snapshot.
 
 ### Routing layout

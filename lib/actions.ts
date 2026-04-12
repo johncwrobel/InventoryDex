@@ -23,22 +23,45 @@ const finishEnum = z.enum(Object.values(Finish) as [Finish, ...Finish[]]);
 
 // Forms submit strings; coerce + validate here so the action is easy to
 // call from a plain <form action={...}>.
-const addInventorySchema = z.object({
-  cardId: z.string().min(1, { error: "Pick a card" }),
-  quantity: z.coerce.number().int().positive().max(9999),
-  condition: conditionEnum,
-  finish: finishEnum,
-  purchasePrice: z.coerce.number().nonnegative().max(9_999_999),
-  listPrice: z
-    .union([z.literal(""), z.coerce.number().nonnegative().max(9_999_999)])
-    .transform((v) => (v === "" ? null : v)),
-  notes: z
-    .string()
-    .max(500)
-    .transform((v) => v.trim() || null)
-    .nullable()
-    .optional(),
-});
+const addInventorySchema = z
+  .object({
+    cardId: z.string().min(1, { error: "Pick a card" }),
+    quantity: z.coerce.number().int().positive().max(9999),
+    condition: conditionEnum,
+    finish: finishEnum,
+    purchasePrice: z.coerce.number().nonnegative().max(9_999_999),
+    listPrice: z
+      .union([z.literal(""), z.coerce.number().nonnegative().max(9_999_999)])
+      .transform((v) => (v === "" ? null : v)),
+    notes: z
+      .string()
+      .max(500)
+      .transform((v) => v.trim() || null)
+      .nullable()
+      .optional(),
+    // Graded card fields. isGraded comes from a checkbox ("on" when checked).
+    isGraded: z
+      .union([z.literal("on"), z.literal("")])
+      .optional()
+      .transform((v) => v === "on"),
+    gradingCompany: z
+      .string()
+      .max(50)
+      .optional()
+      .transform((v) => v?.trim() || null),
+    grade: z
+      .string()
+      .max(20)
+      .optional()
+      .transform((v) => v?.trim() || null),
+  })
+  .refine(
+    (data) => !data.isGraded || (!!data.gradingCompany && !!data.grade),
+    {
+      message: "Grading company and grade are required for graded cards.",
+      path: ["gradingCompany"],
+    },
+  );
 
 const updateListPriceSchema = z.object({
   itemId: z.string().min(1),
@@ -95,6 +118,9 @@ export async function addInventoryItem(formData: FormData): Promise<ActionResult
     purchasePrice: formData.get("purchasePrice"),
     listPrice: formData.get("listPrice"),
     notes: formData.get("notes"),
+    isGraded: formData.get("isGraded") ?? "",
+    gradingCompany: formData.get("gradingCompany") ?? "",
+    grade: formData.get("grade") ?? "",
   });
   if (!parsed.success) return formatZodError(parsed.error);
   const input = parsed.data;
@@ -168,6 +194,9 @@ export async function addInventoryItem(formData: FormData): Promise<ActionResult
       listPrice:
         input.listPrice != null ? new Prisma.Decimal(input.listPrice) : null,
       notes: input.notes ?? null,
+      isGraded: input.isGraded,
+      gradingCompany: input.gradingCompany ?? null,
+      grade: input.grade ?? null,
     },
   });
 

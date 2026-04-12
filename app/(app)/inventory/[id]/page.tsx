@@ -127,11 +127,23 @@ export default async function InventoryDetailPage({
 
           {/* Copy details */}
           <DetailSection title="This copy">
-            <DetailRow label="Condition" value={CONDITION_LABELS[item.condition] ?? item.condition} />
+            {item.isGraded ? (
+              <DetailRow label="Condition" value="Graded" />
+            ) : (
+              <DetailRow label="Condition" value={CONDITION_LABELS[item.condition] ?? item.condition} />
+            )}
             <DetailRow label="Finish" value={FINISH_LABELS[item.finish] ?? item.finish} />
             <DetailRow label="Language" value={item.language} />
             <DetailRow label="Quantity" value={String(item.quantity)} />
           </DetailSection>
+
+          {/* Grading details (graded cards only) */}
+          {item.isGraded && (
+            <DetailSection title="Grading">
+              <DetailRow label="Company" value={item.gradingCompany ?? "—"} />
+              <DetailRow label="Grade" value={item.grade ?? "—"} />
+            </DetailSection>
+          )}
 
           {/* Pricing */}
           <DetailSection title="Pricing">
