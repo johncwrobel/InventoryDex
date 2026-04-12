@@ -102,6 +102,15 @@ Don't `import type { Foo } from "@/app/api/**/route"` in client components — e
 - `recentChange(history, days)` requires at least 50% of the requested window to be present in history, or returns null. Prevents misleading badges from sparse data.
 - Unit tests live in `tests/pricing.test.ts`.
 
+### Scan feature (`app/(app)/scan/`)
+- **Card identification:** Client-side OCR via `tesseract.js` (WASM, runs in browser). Captures a video frame, crops to the top 25% (card name region), runs OCR with PSM 7 (single-line mode), cleans the extracted text, and searches via `/api/cards/identify`.
+- **`/api/cards/identify`** — like `/api/cards/search` but returns top 5 results plus a `marketPrice` field extracted from the TCGPlayer data in the pokemontcg.io response. Uses `pricesForFinish(card, "NORMAL", { allowFallback: true })`.
+- **`lib/scan-types.ts`** — shared `ScanMatch` type `{ card: CardSearchResult; marketPrice: number | null }`.
+- **`use-camera.ts`** — hook wrapping native `getUserMedia`. Sets `playsinline` for iOS Safari. Exposes `start`, `stop`, `capture` (returns `Blob`). Cleans up tracks on unmount.
+- **`use-ocr.ts`** — hook wrapping Tesseract.js with lazy worker initialization. Terminates worker on unmount. Crops image before OCR via an offscreen canvas.
+- **`scan-client.tsx`** — state machine: `idle → scanning → processing → result → add-form → added → (back to scanning)`. After a successful add, loops back to scanning so users can batch-scan multiple cards without re-navigating. Uses the existing `addInventoryItem` server action.
+- **Future v2 enhancement:** A hybrid approach (OCR first, AI vision fallback for low-confidence results) could improve accuracy for damaged or obscured cards. Would require a vision API key and a new server-side proxy route.
+
 ### Styling conventions
 - Tailwind v4 with `@import "tailwindcss"` in `app/globals.css`. No `tailwind.config.js` — use `@theme` blocks and `@layer components` directly in CSS.
 - Form controls share a `.input-base` utility class defined in `globals.css`. Use it for `<input>`, `<select>`, `<textarea>` so the app has one consistent input style.
