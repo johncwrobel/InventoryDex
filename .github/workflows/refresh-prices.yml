@@ -1,0 +1,27 @@
+name: Refresh card prices
+
+on:
+  schedule:
+    # 3x daily at midnight, 8 AM, and 4 PM UTC.
+    # pokemontcg.io refreshes TCGPlayer data once daily at an unknown time,
+    # so 8-hour intervals guarantee prices are never more than 8 hours stale.
+    - cron: "0 0,8,16 * * *"
+  workflow_dispatch: # allow manual trigger from the GitHub Actions UI
+
+jobs:
+  refresh:
+    name: POST /api/cron/refresh-prices
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger price refresh
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            https://inventorydex.com/api/cron/refresh-prices)
+          echo "HTTP status: $response"
+          if [ "$response" != "200" ]; then
+            echo "Price refresh failed with HTTP status $response"
+            exit 1
+          fi

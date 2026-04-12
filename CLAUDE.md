@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **PostgreSQL** via **Prisma** (hosted on Neon or Vercel Postgres)
 - **Auth.js v5** with email magic links; allowlist enforced in `signIn` callback
 - **pokemontcg.io** for card metadata + TCGPlayer price snapshots
-- **Vercel Cron** for daily price refresh
+- **GitHub Actions** for 3× daily price refresh (`.github/workflows/refresh-prices.yml`)
 - Hosted on **Vercel**
 
 ## Common commands
@@ -88,7 +88,8 @@ Don't `import type { Foo } from "@/app/api/**/route"` in client components — e
 - Admin UI lives at `/admin` (server component + `admin-client.tsx`). Protected by `session.user.role === "ADMIN"` check; non-admins get `notFound()`.
 - `lib/admin-actions.ts` contains the `inviteUser`, `revokeUser`, and `getAdminData` server actions. Admin-only check is done in a `requireAdmin()` helper at the top of each.
 - Beta user cap is enforced in `inviteUser`: `count(User) + count(pending Invite) < 50`.
-- `POKEMONTCG_API_KEY` is strongly recommended for beta — without it the price-refresh cron can approach Vercel's 60-second function timeout for large inventories.
+- `POKEMONTCG_API_KEY` is strongly recommended — without it the price-refresh job can approach Vercel's 60-second function timeout for large inventories.
+- `CRON_SECRET` must also be set as a **GitHub Actions secret** (repo Settings → Secrets and variables → Actions → `CRON_SECRET`) so the workflow can authenticate its POST requests to `/api/cron/refresh-prices`. The Vercel cron block has been removed from `vercel.json`; GitHub Actions is the sole trigger.
 
 ### pokemontcg.io integration
 - `lib/pokemontcg.ts` wraps the upstream REST API. Only call it from server code.
