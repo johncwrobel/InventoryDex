@@ -50,6 +50,14 @@ export default async function AppLayout({
             >
               Scan
             </Link>
+            {session.user.role === "ADMIN" && (
+              <Link
+                href="/admin"
+                className="rounded-md px-3 py-1.5 text-white/90 hover:bg-white/15"
+              >
+                Admin
+              </Link>
+            )}
             <form action={signOutAction}>
               <button
                 type="submit"

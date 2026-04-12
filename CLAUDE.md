@@ -81,6 +81,15 @@ When a route needs client-side interactivity (e.g. the add-card search, the inli
 ### Shared types across server/client
 Don't `import type { Foo } from "@/app/api/**/route"` in client components — even type-only imports can drag the route handler's server-only dependencies (`auth`, `prisma`) into the client bundle graph. Put shared shapes in `lib/*-types.ts` (see `lib/card-search-types.ts` for the pattern).
 
+### User management (invite system)
+- `ALLOWED_EMAILS` env var = admin list (bypass DB, auto-promoted to `ADMIN` role on first sign-in).
+- All other users need an `Invite` row in the DB (created via `/admin` UI by an admin).
+- `signIn` callback in `lib/auth.ts` checks ALLOWED_EMAILS first, then the Invite table. Invite rows are stamped `acceptedAt` on first use.
+- Admin UI lives at `/admin` (server component + `admin-client.tsx`). Protected by `session.user.role === "ADMIN"` check; non-admins get `notFound()`.
+- `lib/admin-actions.ts` contains the `inviteUser`, `revokeUser`, and `getAdminData` server actions. Admin-only check is done in a `requireAdmin()` helper at the top of each.
+- Beta user cap is enforced in `inviteUser`: `count(User) + count(pending Invite) < 50`.
+- `POKEMONTCG_API_KEY` is strongly recommended for beta — without it the price-refresh cron can approach Vercel's 60-second function timeout for large inventories.
+
 ### pokemontcg.io integration
 - `lib/pokemontcg.ts` wraps the upstream REST API. Only call it from server code.
 - `finishPriceKeys()` / `pricesForFinish()` handle the fact that TCGPlayer exposes different price blocks per finish variant (`normal`, `holofoil`, `1stEditionHolofoil`, etc.), and some variants are missing on some cards.

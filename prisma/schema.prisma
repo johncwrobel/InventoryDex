@@ -21,9 +21,11 @@ model User {
   emailVerified DateTime?
   image         String?
   createdAt     DateTime        @default(now())
+  role          Role            @default(USER)
   accounts      Account[]
   sessions      Session[]
   inventory     InventoryItem[]
+  sentInvites   Invite[]        @relation("SentInvites")
 }
 
 model Account {
@@ -122,6 +124,25 @@ model PricePoint {
   card Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
 
   @@index([cardId, finish, capturedAt])
+}
+
+// Invite table: admin adds email addresses; signIn callback checks this
+// table when the email isn't in the ALLOWED_EMAILS admin list.
+model Invite {
+  id         String    @id @default(cuid())
+  email      String    @unique
+  invitedBy  String    // userId of the admin who created the invite
+  createdAt  DateTime  @default(now())
+  acceptedAt DateTime? // null = pending, non-null = consumed at first sign-in
+
+  inviter User @relation("SentInvites", fields: [invitedBy], references: [id])
+
+  @@index([email])
+}
+
+enum Role {
+  ADMIN
+  USER
 }
 
 enum Condition {

@@ -4,23 +4,25 @@ A web-based inventory management tool for Pokémon TCG vendors. Track purchase p
 
 ## Features
 
-- **Invite-only auth** via Auth.js v5 magic links, gated by an `ALLOWED_EMAILS` allowlist.
+- **Invite-only auth** — magic links via Resend, no passwords. Admins manage users from the `/admin` UI; no redeployment needed to add/remove users. Up to 50 beta users enforced by a cap check.
+- **Admin panel** — `/admin` (ADMIN role only): view active users, send email invites, revoke access.
 - **Card search** against pokemontcg.io with a local `Card` table cache shared across users.
 - **Per-user inventory** with condition, finish, quantity, purchase price, list price, and notes — multiple rows per card allowed for different lots.
-- **Responsive inventory list** — table on desktop, stacked cards on mobile. Inline list-price editing and one-click delete.
-- **Price delta badges** — ▲/▼ % change badge on each row when market price moves more than ±5% over 7 days (threshold configurable via env var).
-- **List-price flags** — ⬇ Low / ⬆ High pill when the list price is more than 15% away from market (threshold configurable).
-- **Needs attention filter** — one-click filter that surfaces only rows with a price move or list-price flag.
-- **Card detail page** — large image, full metadata, pricing section, notes, and a Recharts market-price history chart.
-- **Daily price refresh** — Vercel Cron hits `/api/cron/refresh-prices` at 07:00 UTC, inserting a new `PricePoint` per `(card, finish)` for every card in any user's inventory.
-- **PWA** — `manifest.webmanifest` with standalone display and brand red theme; `apple-touch-icon` for iOS "Add to Home Screen."
+- **Responsive inventory list** — table on desktop, stacked cards on mobile. Inline list-price editing and one-click delete. Market price links to TCGPlayer.
+- **Price delta badges** — ▲/▼ % change badge when market price moves more than ±5% over 7 days.
+- **List-price flags** — ⬇ Low / ⬆ High pill when list price is more than 15% from market.
+- **Needs attention filter** — surfaces rows with a price move or list-price flag.
+- **Card detail page** — large image, full metadata, pricing section, notes, Recharts market-price history chart.
+- **Price refresh** — Vercel Cron 3× daily (`0 */8 * * *`), batched 10 cards at a time with rate-limit handling.
+- **PWA** — `manifest.webmanifest` with standalone display and brand red theme; `apple-touch-icon` for iOS.
 
 ### Roadmap
 
-- ✅ **M1 — Bootstrap** — scaffold, Prisma schema on Neon, Auth.js with allowlist, Vercel deploy.
+- ✅ **M1 — Bootstrap** — scaffold, Prisma schema on Neon, Auth.js, Vercel deploy.
 - ✅ **M2 — Inventory CRUD** — card search, add flow, inventory list, inline edit, delete, card detail page.
-- ✅ **M3 — Pricing intelligence** — daily refresh cron, delta badges, "needs attention" filter, card detail with price-history chart.
-- ✅ **M4 — Polish + PWA** — PWA manifest + icons, Vitest unit tests (17), Playwright smoke tests (iPhone 14 + Desktop Chrome).
+- ✅ **M3 — Pricing intelligence** — refresh cron, delta badges, "needs attention" filter, price-history chart.
+- ✅ **M4 — Polish + PWA** — PWA manifest + icons, Vitest unit tests, Playwright smoke tests.
+- ✅ **M5 — Beta readiness** — DB-backed invite system + admin UI, TCGPlayer market price links, 3× daily refresh with batch concurrency.
 
 Camera scan is explicitly deferred (v2).
 
@@ -37,7 +39,7 @@ npm run db:migrate -- --name init       # create the schema in your database
 npm run dev
 ```
 
-Open http://localhost:3000 — you'll be redirected to `/sign-in`. Enter an allowlisted email, click the magic link, and land on `/inventory`. Click **Add** to search pokemontcg.io and add your first card.
+Open http://localhost:3000 — you'll be redirected to `/sign-in`. Enter an email from `ALLOWED_EMAILS`, click the magic link, and land on `/inventory`. The first `ALLOWED_EMAILS` user to sign in is automatically promoted to Admin and can invite others via `/admin`.
 
 ## Scripts
 

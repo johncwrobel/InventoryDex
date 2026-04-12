@@ -7,7 +7,7 @@ export default function NotInvitedPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Not invited yet</h1>
         <p className="text-sm text-neutral-600 dark:text-neutral-400">
           This app is currently invite-only. If you should have access, ask the
-          administrator to add your email to the allowlist.
+          administrator to send you an invite.
         </p>
         <Link
           href="/sign-in"
