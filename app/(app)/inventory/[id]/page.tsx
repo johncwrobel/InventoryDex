@@ -4,29 +4,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { DetailDeleteButton } from "./delete-button";
 import { PriceChart, type PriceChartPoint } from "./price-chart";
-
-const CONDITION_LABELS: Record<string, string> = {
-  MINT: "Mint",
-  NEAR_MINT: "Near Mint",
-  LIGHTLY_PLAYED: "Lightly Played",
-  MODERATELY_PLAYED: "Moderately Played",
-  HEAVILY_PLAYED: "Heavily Played",
-  DAMAGED: "Damaged",
-};
-
-const FINISH_LABELS: Record<string, string> = {
-  NORMAL: "Normal",
-  HOLO: "Holo",
-  REVERSE_HOLO: "Reverse Holo",
-  FIRST_ED_HOLO: "1st Edition Holo",
-};
-
-function formatMoney(value: string | null | undefined): string {
-  if (value == null) return "—";
-  const n = Number(value);
-  if (!Number.isFinite(n)) return String(value);
-  return `$${n.toFixed(2)}`;
-}
+import { ItemDetails, type EditableItem } from "./item-details";
 
 function formatDate(d: Date | null | undefined): string {
   if (!d) return "—";
@@ -37,6 +15,13 @@ function formatDate(d: Date | null | undefined): string {
   });
 }
 
+function formatMoney(value: string | null | undefined): string {
+  if (value == null) return "—";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value);
+  return `$${n.toFixed(2)}`;
+}
+
 export default async function InventoryDetailPage({
   params,
 }: {
@@ -44,7 +29,7 @@ export default async function InventoryDetailPage({
 }) {
   const { id } = await params;
   const session = await auth();
-  const userId = session!.user!.id; // guaranteed by the (app) layout
+  const userId = session!.user!.id;
 
   const item = await prisma.inventoryItem.findFirst({
     where: { id, userId },
@@ -68,12 +53,29 @@ export default async function InventoryDetailPage({
     .slice()
     .reverse();
 
-  const latestPrice = finishPrices.length > 0 ? finishPrices[finishPrices.length - 1] : undefined;
+  const latestPrice =
+    finishPrices.length > 0 ? finishPrices[finishPrices.length - 1] : undefined;
 
   const chartData: PriceChartPoint[] = finishPrices.map((p) => ({
     date: p.capturedAt.toISOString(),
     market: p.market != null ? Number(p.market) : null,
   }));
+
+  // Serialise Decimal fields before passing to client components.
+  const editableItem: EditableItem = {
+    id: item.id,
+    quantity: item.quantity,
+    condition: item.condition,
+    finish: item.finish,
+    language: item.language,
+    purchasePrice: item.purchasePrice.toString(),
+    purchasedAt: item.purchasedAt?.toISOString() ?? null,
+    listPrice: item.listPrice?.toString() ?? null,
+    notes: item.notes,
+    isGraded: item.isGraded,
+    gradingCompany: item.gradingCompany,
+    grade: item.grade,
+  };
 
   return (
     <div className="space-y-6">
@@ -115,6 +117,7 @@ export default async function InventoryDetailPage({
 
         {/* Metadata */}
         <div className="min-w-0 flex-1 space-y-5">
+          {/* Card identity (immutable) */}
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">
               {item.card.name}
@@ -125,64 +128,54 @@ export default async function InventoryDetailPage({
             </p>
           </div>
 
-          {/* Copy details */}
-          <DetailSection title="This copy">
-            {item.isGraded ? (
-              <DetailRow label="Condition" value="Graded" />
-            ) : (
-              <DetailRow label="Condition" value={CONDITION_LABELS[item.condition] ?? item.condition} />
-            )}
-            <DetailRow label="Finish" value={FINISH_LABELS[item.finish] ?? item.finish} />
-            <DetailRow label="Language" value={item.language} />
-            <DetailRow label="Quantity" value={String(item.quantity)} />
-          </DetailSection>
+          {/* Editable sections */}
+          <ItemDetails item={editableItem} />
 
-          {/* Grading details (graded cards only) */}
-          {item.isGraded && (
-            <DetailSection title="Grading">
-              <DetailRow label="Company" value={item.gradingCompany ?? "—"} />
-              <DetailRow label="Grade" value={item.grade ?? "—"} />
-            </DetailSection>
-          )}
-
-          {/* Pricing */}
-          <DetailSection title="Pricing">
-            <DetailRow
-              label="Purchase price"
-              value={formatMoney(item.purchasePrice.toString())}
-            />
-            <DetailRow label="Purchased" value={formatDate(item.purchasedAt)} />
-            <DetailRow
-              label="List price"
-              value={formatMoney(item.listPrice?.toString() ?? null)}
-            />
-            <DetailRow
-              label="Latest market"
-              value={formatMoney(latestPrice?.market?.toString() ?? null)}
-            />
-            {latestPrice && (
-              <DetailRow
-                label="Market captured"
-                value={formatDate(latestPrice.capturedAt)}
-              />
-            )}
-          </DetailSection>
-
-          {/* Notes */}
-          <DetailSection title="Notes">
-            {item.notes ? (
-              <p className="whitespace-pre-wrap text-sm">{item.notes}</p>
-            ) : (
-              <p className="text-sm text-neutral-500">No notes for this copy.</p>
-            )}
-          </DetailSection>
+          {/* Latest market price — server-side only, not editable */}
+          <section className="space-y-2">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+              Market data
+            </h2>
+            <div className="rounded-xl border border-black/10 p-4 dark:border-white/10">
+              <div className="flex items-baseline justify-between gap-4 py-1 text-sm">
+                <span className="text-neutral-500">Latest market</span>
+                <span className="tabular-nums">
+                  {formatMoney(latestPrice?.market?.toString() ?? null)}
+                </span>
+              </div>
+              {latestPrice && (
+                <div className="flex items-baseline justify-between gap-4 py-1 text-sm">
+                  <span className="text-neutral-500">Captured</span>
+                  <span className="tabular-nums">
+                    {formatDate(latestPrice.capturedAt)}
+                  </span>
+                </div>
+              )}
+            </div>
+          </section>
 
           {/* Record metadata */}
-          <DetailSection title="Record">
-            <DetailRow label="Added" value={formatDate(item.createdAt)} />
-            <DetailRow label="Last updated" value={formatDate(item.updatedAt)} />
-            <DetailRow label="Card ID" value={item.card.id} mono />
-          </DetailSection>
+          <section className="space-y-2">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+              Record
+            </h2>
+            <div className="rounded-xl border border-black/10 p-4 dark:border-white/10">
+              <div className="flex items-baseline justify-between gap-4 py-1 text-sm">
+                <span className="text-neutral-500">Added</span>
+                <span className="tabular-nums">{formatDate(item.createdAt)}</span>
+              </div>
+              <div className="flex items-baseline justify-between gap-4 py-1 text-sm">
+                <span className="text-neutral-500">Last updated</span>
+                <span className="tabular-nums">{formatDate(item.updatedAt)}</span>
+              </div>
+              <div className="flex items-baseline justify-between gap-4 py-1 text-sm">
+                <span className="text-neutral-500">Card ID</span>
+                <span className="truncate font-mono text-xs text-neutral-700 dark:text-neutral-300">
+                  {item.card.id}
+                </span>
+              </div>
+            </div>
+          </section>
 
           {/* Actions */}
           <div className="flex flex-wrap items-center gap-3 pt-2">
@@ -204,50 +197,6 @@ export default async function InventoryDetailPage({
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function DetailSection({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="space-y-2">
-      <h2 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-        {title}
-      </h2>
-      <div className="rounded-xl border border-black/10 p-4 dark:border-white/10">
-        {children}
-      </div>
-    </section>
-  );
-}
-
-function DetailRow({
-  label,
-  value,
-  mono = false,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-}) {
-  return (
-    <div className="flex items-baseline justify-between gap-4 py-1 text-sm">
-      <span className="text-neutral-500">{label}</span>
-      <span
-        className={
-          mono
-            ? "truncate font-mono text-xs text-neutral-700 dark:text-neutral-300"
-            : "text-right tabular-nums"
-        }
-      >
-        {value}
-      </span>
     </div>
   );
 }

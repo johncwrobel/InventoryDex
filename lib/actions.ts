@@ -74,6 +74,50 @@ const deleteItemSchema = z.object({
   itemId: z.string().min(1),
 });
 
+const updateInventorySchema = z
+  .object({
+    itemId: z.string().min(1),
+    quantity: z.coerce.number().int().positive().max(9999),
+    condition: conditionEnum,
+    finish: finishEnum,
+    language: z.string().max(10).default("EN"),
+    purchasePrice: z.coerce.number().nonnegative().max(9_999_999),
+    purchasedAt: z
+      .union([z.literal(""), z.string()])
+      .optional()
+      .transform((v) => (v ? new Date(v) : null)),
+    listPrice: z
+      .union([z.literal(""), z.coerce.number().nonnegative().max(9_999_999)])
+      .transform((v) => (v === "" ? null : v)),
+    notes: z
+      .string()
+      .max(500)
+      .transform((v) => v.trim() || null)
+      .nullable()
+      .optional(),
+    isGraded: z
+      .union([z.literal("on"), z.literal("")])
+      .optional()
+      .transform((v) => v === "on"),
+    gradingCompany: z
+      .string()
+      .max(50)
+      .optional()
+      .transform((v) => v?.trim() || null),
+    grade: z
+      .string()
+      .max(20)
+      .optional()
+      .transform((v) => v?.trim() || null),
+  })
+  .refine(
+    (data) => !data.isGraded || (!!data.gradingCompany && !!data.grade),
+    {
+      message: "Grading company and grade are required for graded cards.",
+      path: ["gradingCompany"],
+    },
+  );
+
 // ---------- Action result helpers ----------
 
 export type ActionResult =
@@ -257,5 +301,57 @@ export async function deleteInventoryItem(formData: FormData): Promise<ActionRes
   }
 
   revalidatePath("/inventory");
+  return { ok: true };
+}
+
+/**
+ * Update all editable fields on an inventory item the current user owns.
+ */
+export async function updateInventoryItem(formData: FormData): Promise<ActionResult> {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return { ok: false, error: "You must be signed in." };
+  }
+
+  const parsed = updateInventorySchema.safeParse({
+    itemId: formData.get("itemId"),
+    quantity: formData.get("quantity"),
+    condition: formData.get("condition"),
+    finish: formData.get("finish"),
+    language: formData.get("language") || "EN",
+    purchasePrice: formData.get("purchasePrice"),
+    purchasedAt: formData.get("purchasedAt") ?? "",
+    listPrice: formData.get("listPrice"),
+    notes: formData.get("notes"),
+    isGraded: formData.get("isGraded") ?? "",
+    gradingCompany: formData.get("gradingCompany") ?? "",
+    grade: formData.get("grade") ?? "",
+  });
+  if (!parsed.success) return formatZodError(parsed.error);
+  const { itemId, ...fields } = parsed.data;
+
+  const result = await prisma.inventoryItem.updateMany({
+    where: { id: itemId, userId: session.user.id },
+    data: {
+      quantity: fields.quantity,
+      condition: fields.condition,
+      finish: fields.finish,
+      language: fields.language,
+      purchasePrice: new Prisma.Decimal(fields.purchasePrice),
+      purchasedAt: fields.purchasedAt ?? null,
+      listPrice: fields.listPrice != null ? new Prisma.Decimal(fields.listPrice) : null,
+      notes: fields.notes ?? null,
+      isGraded: fields.isGraded,
+      gradingCompany: fields.gradingCompany ?? null,
+      grade: fields.grade ?? null,
+    },
+  });
+
+  if (result.count === 0) {
+    return { ok: false, error: "Item not found." };
+  }
+
+  revalidatePath("/inventory");
+  revalidatePath(`/inventory/${itemId}`);
   return { ok: true };
 }
