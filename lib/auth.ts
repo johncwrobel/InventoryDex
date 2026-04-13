@@ -46,7 +46,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth(() => ({
      */
     async signIn({ user }) {
       const email = user.email?.toLowerCase();
-      if (!email) return false;
+      if (!email) return "/not-invited?reason=invalid";
 
       // Admin path: ALLOWED_EMAILS are always permitted and auto-promoted.
       if (env.ALLOWED_EMAILS.includes(email)) {
@@ -62,7 +62,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth(() => ({
       const invite = await prisma.invite.findFirst({
         where: { email, acceptedAt: null },
       });
-      if (!invite) return false;
+      if (!invite) return "/not-invited?reason=no-invite";
 
       await prisma.invite.update({
         where: { id: invite.id },
