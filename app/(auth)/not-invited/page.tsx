@@ -24,7 +24,7 @@ export default async function NotInvitedPage({
   searchParams: SearchParams;
 }) {
   const { reason } = await searchParams;
-  const { heading, body } = (reason && messages[reason]) ?? fallback;
+  const { heading, body } = (reason ? messages[reason] : undefined) ?? fallback;
 
   return (
     <main className="flex min-h-dvh items-center justify-center p-6">

@@ -15,6 +15,7 @@ import { updateListPrice, deleteInventoryItem } from "@/lib/actions";
 
 export interface InventoryRowData {
   id: string;
+  createdAt: string; // ISO string, used for sort
   quantity: number;
   condition: string;
   finish: string;
@@ -26,6 +27,7 @@ export interface InventoryRowData {
     name: string;
     setName: string;
     number: string;
+    rarity: string | null;
     imageSmall: string | null;
     tcgplayerUrl: string | null;
   };
