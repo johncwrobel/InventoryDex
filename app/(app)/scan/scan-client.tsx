@@ -104,8 +104,8 @@ export function ScanClient() {
 
     setState({ kind: "processing", progress: 0 });
 
-    // Run dual-pass OCR: number from the bottom (reliable), name from the top (best-effort).
-    let ocrResult: CardOcrResult = { name: "", number: "" };
+    // Run three-pass OCR: number (bottom), body text (middle), name (top).
+    let ocrResult: CardOcrResult = { name: "", number: "", bodyWords: [] };
     try {
       ocrResult = await ocr.recognizeCard(blob);
     } catch {
@@ -113,10 +113,10 @@ export function ScanClient() {
       return;
     }
 
-    const { name, number } = ocrResult;
+    const { name, number, bodyWords } = ocrResult;
 
-    // Need at least a card number or a 2+ char name to search.
-    if (!number && name.length < 2) {
+    // Need at least a card number, 2+ char name, or body words to search.
+    if (!number && name.length < 2 && bodyWords.length < 2) {
       setState({
         kind: "error",
         message: "Couldn't read the card. Make sure the full card is visible — especially the number at the bottom — and try again.",
@@ -124,10 +124,12 @@ export function ScanClient() {
       return;
     }
 
-    // Build the search URL. Number is the primary signal; name is a secondary filter.
+    // Build the search URL. Number is the primary signal; body words re-rank results;
+    // name is a secondary filter.
     const params = new URLSearchParams();
     if (name.length >= 2) params.set("q", name);
     if (number) params.set("number", number);
+    if (bodyWords.length > 0) params.set("bodyWords", bodyWords.join(","));
 
     let matches: ScanMatch[] = [];
     try {
@@ -183,7 +185,7 @@ export function ScanClient() {
 
   function handleCancelForm() {
     if (state.kind === "add-form") {
-      setState({ kind: "result", matches: [state.match], ocr: { name: "", number: "" } });
+      setState({ kind: "result", matches: [state.match], ocr: { name: "", number: "", bodyWords: [] } });
     }
   }
 
@@ -324,7 +326,7 @@ function ScanningView({
         autoPlay
       />
 
-      {/* Guide overlay — two highlighted zones matching the OCR crop regions */}
+      {/* Guide overlay — three highlighted zones matching the OCR crop regions */}
       {cameraReady && (
         <div className="pointer-events-none absolute inset-0">
           {/* Name zone: top 20% */}
@@ -334,6 +336,15 @@ function ScanningView({
           >
             <span className="absolute -top-5 left-0 right-0 text-center text-[11px] font-semibold text-yellow-300 drop-shadow">
               Card name
+            </span>
+          </div>
+          {/* Body text zone: 55–87% — attacks, abilities, flavor text */}
+          <div
+            className="absolute inset-x-4 rounded-lg border-2 border-green-300/60"
+            style={{ top: "55%", height: "32%" }}
+          >
+            <span className="absolute -top-5 left-0 right-0 text-center text-[11px] font-semibold text-green-300 drop-shadow">
+              Card text
             </span>
           </div>
           {/* Number zone: bottom 18%, above the capture button */}

@@ -1,14 +1,18 @@
 /**
- * GET /api/cards/identify?q=<name>&number=<cardNumber>
+ * GET /api/cards/identify?q=<name>&number=<cardNumber>&bodyWords=<word1,word2,...>
  *
- * Used by the scan feature. Accepts an OCR-extracted card name and/or card
- * number and returns matching cards with their best available TCGPlayer market
- * price.
+ * Used by the scan feature. Accepts OCR-extracted card name, number, and body
+ * text words, then returns matching cards ranked by relevance with their best
+ * available TCGPlayer market price.
  *
- * Search strategy (most → least specific):
- *   1. name + number  → compound query, up to 5 results (should be 1–2)
- *   2. number only    → up to 20 results (many cards share a number across sets)
- *   3. name only      → up to 8 results
+ * Search strategy:
+ *   1. Fetch candidates from pokemontcg.io using number + name (most specific first).
+ *   2. If bodyWords are provided (≥ 2 words), re-rank candidates by counting how
+ *      many OCR body words appear in each card's text fields (attacks, abilities,
+ *      flavorText, rules). This approach is inspired by prateekt/pokemon-card-recognizer
+ *      (GPL-3.0, Prateek Tandon): https://github.com/prateekt/pokemon-card-recognizer
+ *      — body text uses regular fonts → reliable OCR → strong re-ranking signal.
+ *   3. Return the top 5 results.
  *
  * Auth: any signed-in user.
  */
@@ -28,17 +32,32 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const q = searchParams.get("q")?.trim() ?? "";
   const number = searchParams.get("number")?.trim() ?? "";
+  const bodyWordsRaw = searchParams.get("bodyWords")?.trim() ?? "";
+  const bodyWords = bodyWordsRaw
+    ? bodyWordsRaw
+        .split(",")
+        .map((w) => w.trim().toLowerCase())
+        .filter((w) => w.length >= 4)
+        .slice(0, 10)
+    : [];
 
-  // Need at least a 2-char name or a card number.
-  if (q.length < 2 && !number) {
+  const hasBodyWords = bodyWords.length >= 2;
+
+  // Need at least a 2-char name, a card number, or body words to search.
+  if (q.length < 2 && !number && !hasBodyWords) {
     return NextResponse.json({ results: [] satisfies ScanMatch[] });
   }
 
-  // Determine page size based on how specific the query is.
-  // number+name → very specific → 5 results
-  // number only → moderately specific (shared across sets) → 20 results
-  // name only → least specific → 8 results
-  const pageSize = number ? (q.length >= 2 ? 5 : 20) : 8;
+  // Fetch more candidates when body words are available so re-ranking has a
+  // wider pool to work with.
+  let pageSize: number;
+  if (number && q.length >= 2) {
+    pageSize = hasBodyWords ? 10 : 5;
+  } else if (number) {
+    pageSize = hasBodyWords ? 30 : 20;
+  } else {
+    pageSize = hasBodyWords ? 12 : 8;
+  }
 
   let upstream: PokemonTcgCard[];
   try {
@@ -53,6 +72,12 @@ export async function GET(request: Request) {
       { error: "Search failed. Try again in a moment." },
       { status: 502 },
     );
+  }
+
+  // Re-rank candidates by shared body-word count when we have enough words.
+  // Mirrors the classify_shared_words function from prateekt/pokemon-card-recognizer.
+  if (hasBodyWords && upstream.length > 1) {
+    upstream = rankByBodyWords(upstream, bodyWords);
   }
 
   // Cache every returned card locally — same pattern as /api/cards/search.
@@ -90,7 +115,7 @@ export async function GET(request: Request) {
     ),
   );
 
-  const results: ScanMatch[] = upstream.map((card) => {
+  const results: ScanMatch[] = upstream.slice(0, 5).map((card) => {
     const priceBlock = pricesForFinish(card, "NORMAL", { allowFallback: true });
     const marketPrice = priceBlock?.market ?? null;
 
@@ -110,4 +135,45 @@ export async function GET(request: Request) {
   });
 
   return NextResponse.json({ results });
+}
+
+/**
+ * Score a card by counting how many query words appear in its body text fields.
+ * Higher score = better match. Ties preserve original API order (stable sort).
+ *
+ * Directly adapted from classify_shared_words in prateekt/pokemon-card-recognizer:
+ * https://github.com/prateekt/pokemon-card-recognizer
+ */
+function scoreCard(card: PokemonTcgCard, queryWords: string[]): number {
+  const parts: string[] = [
+    card.name ?? "",
+    card.evolvesFrom ?? "",
+    card.flavorText ?? "",
+    ...(card.abilities?.flatMap((a) => [a.name, a.text ?? ""]) ?? []),
+    ...(card.attacks?.flatMap((a) => [a.name, a.damage ?? "", a.text ?? ""]) ?? []),
+    ...(card.rules ?? []),
+  ];
+
+  const cardWords = new Set(
+    parts
+      .join(" ")
+      .toLowerCase()
+      .split(/\W+/)
+      .filter((w) => w.length >= 4),
+  );
+
+  return queryWords.filter((w) => cardWords.has(w)).length;
+}
+
+function rankByBodyWords(cards: PokemonTcgCard[], bodyWords: string[]): PokemonTcgCard[] {
+  // Attach scores without mutating, then stable-sort descending.
+  const scored = cards.map((card, i) => ({
+    card,
+    score: scoreCard(card, bodyWords),
+    originalIndex: i,
+  }));
+  scored.sort((a, b) =>
+    b.score !== a.score ? b.score - a.score : a.originalIndex - b.originalIndex,
+  );
+  return scored.map((s) => s.card);
 }

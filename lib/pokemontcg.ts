@@ -19,11 +19,31 @@ const BASE_URL = "https://api.pokemontcg.io/v2";
 // We intentionally only model the fields we actually read. The API
 // returns a much richer document; extra fields are tolerated.
 
+// Body-text fields returned by the API and used for scan word-matching.
+// Inspired by prateekt/pokemon-card-recognizer (GPL-3.0, Prateek Tandon):
+// https://github.com/prateekt/pokemon-card-recognizer
+export interface PokemonTcgAttack {
+  name: string;
+  damage?: string;
+  text?: string;
+}
+
+export interface PokemonTcgAbility {
+  name: string;
+  type?: string;
+  text?: string;
+}
+
 export interface PokemonTcgCard {
   id: string;
   name: string;
   number: string;
   rarity?: string;
+  evolvesFrom?: string;
+  flavorText?: string;
+  abilities?: PokemonTcgAbility[];
+  attacks?: PokemonTcgAttack[];
+  rules?: string[];
   set: {
     id: string;
     name: string;
