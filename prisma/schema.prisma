@@ -147,28 +147,61 @@ model Invite {
   @@index([email])
 }
 
-// Sealed product inventory — booster boxes, ETBs, packs, etc.
-// Separate from InventoryItem because sealed products have different
-// fields (no cardId, condition, finish, grading) and no upstream price API.
-model SealedInventoryItem {
-  id            String            @id @default(cuid())
-  userId        String
-  productType   SealedProductType
-  name          String            // e.g. "Surging Sparks Booster Box"
-  setName       String?           // e.g. "Surging Sparks"
-  quantity      Int               @default(1)
-  isSealed      Boolean           @default(true) // sealed vs opened/damaged
-  purchasePrice Decimal           @db.Decimal(10, 2)
-  purchasedAt   DateTime?
-  listPrice     Decimal?          @db.Decimal(10, 2)
-  notes         String?
-  imageUrl      String?           // optional product image URL
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+// Shared sealed product catalog — one entry per distinct product, shared across
+// all users. Mirrors the Card model pattern. Users' inventory lots link here.
+model SealedProduct {
+  id           String            @id @default(cuid())
+  setId        String?           // pokemontcg.io set ID (e.g. "sv8"); null for accessories
+  setName      String?           // denormalized from pokemontcg.io for display
+  productType  SealedProductType
+  name         String            // e.g. "Surging Sparks Booster Box"
+  tcgplayerUrl String?           // used by cron for price scraping + UI deep link
+  imageUrl     String?
+  createdAt    DateTime          @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prices         SealedPricePoint[]
+  inventoryItems SealedInventoryItem[]
+
+  @@index([name])
+  @@index([setId, productType])
+}
+
+// Historical market-price snapshots per SealedProduct, populated by the cron
+// job via TCGPlayer HTML scraping. Never mutate — always INSERT a new row.
+model SealedPricePoint {
+  id              String   @id @default(cuid())
+  sealedProductId String
+  market          Decimal? @db.Decimal(10, 2)
+  low             Decimal? @db.Decimal(10, 2)
+  high            Decimal? @db.Decimal(10, 2)
+  capturedAt      DateTime @default(now())
+
+  product SealedProduct @relation(fields: [sealedProductId], references: [id], onDelete: Cascade)
+
+  @@index([sealedProductId, capturedAt])
+}
+
+// A single user's lot of a sealed product. Multiple rows per SealedProduct
+// are allowed (different purchase lots, quantities, etc.).
+model SealedInventoryItem {
+  id              String        @id @default(cuid())
+  userId          String
+  sealedProductId String
+  // Inventory fields
+  quantity        Int           @default(1)
+  isSealed        Boolean       @default(true)
+  purchasePrice   Decimal       @db.Decimal(10, 2)
+  purchasedAt     DateTime?
+  listPrice       Decimal?      @db.Decimal(10, 2)
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product SealedProduct @relation(fields: [sealedProductId], references: [id])
 
   @@index([userId])
+  @@index([userId, sealedProductId])
 }
 
 enum Role {

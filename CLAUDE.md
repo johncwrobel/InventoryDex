@@ -50,13 +50,15 @@ Next.js 16 has breaking changes from prior versions. **Before writing any Next-s
 ## Architecture
 
 ### Data model
-Four domain tables sit alongside the Auth.js tables:
+Six domain tables sit alongside the Auth.js tables:
 
 - **`Card`** — canonical pokemontcg.io card metadata (name, set, images, TCGPlayer URL). Keyed by the upstream id (e.g. `sv1-25`) and **shared across all users** so we fetch/cache each unique card once.
 - **`InventoryItem`** — one vendor's copy of a card. Multiple rows per card are allowed (different condition / finish / purchase lots). Owns `purchasePrice`, `listPrice`, `quantity`, `condition`, `finish`, `notes`. Scoped to `userId`. Also supports graded cards via `isGraded` (boolean), `gradingCompany` (e.g. "PSA"), and `grade` (e.g. "10"). When `isGraded=true`, `condition` is stored as `NEAR_MINT` as a DB placeholder and is hidden from the UI; `gradingCompany` and `grade` are the authoritative condition descriptor. Market pricing for graded cards is not yet implemented.
-- **`SealedInventoryItem`** — sealed product inventory (booster boxes, ETBs, packs, etc.) tracked separately from individual cards because the data shape is fundamentally different — no `cardId`, `condition`, `finish`, or market price feed. Fields: `productType` (`SealedProductType` enum), `name`, `setName`, `quantity`, `isSealed` (boolean), `purchasePrice`, `listPrice`, `purchasedAt`, `notes`, `imageUrl`. Scoped to `userId`. The upstream pokemontcg.io API does not expose sealed products, so all data is entered manually. Server actions live in `lib/sealed-actions.ts`; shared row type in `lib/sealed-types.ts`. Detail page at `/inventory/sealed/[id]`.
-  - `SealedProductType` enum values: `BOOSTER_PACK`, `BOOSTER_BUNDLE`, `BOOSTER_BOX`, `ELITE_TRAINER_BOX`, `SUPER_PREMIUM_COLLECTION`, `SPECIAL_COLLECTION`, `THEME_DECK`, `TIN`, `OTHER`.
 - **`PricePoint`** — historical market-price snapshots per `(cardId, finish)`. Enables "recent change over N days" math. Never mutate existing rows — always insert a new snapshot.
+- **`SealedProduct`** — shared catalog of sealed products (booster boxes, ETBs, packs, etc.), mirroring the `Card` pattern. One entry per distinct product, shared across all users. Fields: `productType`, `name`, `setId`, `setName`, `tcgplayerUrl` (used by cron for price scraping), `imageUrl`. Server actions: `createSealedProduct`, `searchSealedProducts` in `lib/sealed-actions.ts`.
+  - `SealedProductType` enum values: `BOOSTER_PACK`, `BOOSTER_BUNDLE`, `BOOSTER_BOX`, `ELITE_TRAINER_BOX`, `SUPER_PREMIUM_COLLECTION`, `SPECIAL_COLLECTION`, `THEME_DECK`, `TIN`, `OTHER`.
+- **`SealedInventoryItem`** — one user's lot of a sealed product, linked to a `SealedProduct` via `sealedProductId` FK. Scoped to `userId`. Inventory-only fields: `quantity`, `isSealed`, `purchasePrice`, `listPrice`, `purchasedAt`, `notes`. Server actions live in `lib/sealed-actions.ts`; shared row types in `lib/sealed-types.ts`. Detail page at `/inventory/sealed/[id]`.
+- **`SealedPricePoint`** — historical market-price snapshots per `SealedProduct`, inserted by the cron job via TCGPlayer HTML scraping. Fields: `market`, `low`, `high`, `capturedAt`. Never mutate — always INSERT a new row.
 
 ### Routing layout
 - `app/(auth)/*` — sign-in and not-invited pages (unauthenticated).
@@ -81,10 +83,15 @@ When a route needs client-side interactivity (e.g. the add-card search, the inli
 - `app/(app)/<route>/<name>-client.tsx` (or `<name>.tsx` with `"use client"`) holds the interactive piece.
 
 ### Inventory list (`app/(app)/inventory/page.tsx`)
-The inventory page fetches both `InventoryItem` (cards) and `SealedInventoryItem` (sealed products) in parallel and merges them into a unified `InventoryRowData` union type before passing to the client. `InventoryRowData = CardInventoryRowData | SealedInventoryRowData` — both have `itemType: "card" | "sealed"` discriminants. Sort and search helpers in the page use helper functions `itemName(r)` and `itemSetName(r)` to safely handle both types. The "Needs attention" filter only applies to card rows (sealed items have no price-change or list-flag signals). The `InventoryRow` client component dispatches to `CardRow` or `SealedRow` based on `item.itemType`.
+The inventory page fetches both `InventoryItem` (cards) and `SealedInventoryItem` (sealed products) in parallel and merges them into a unified `InventoryRowData` union type before passing to the client. `InventoryRowData = CardInventoryRowData | SealedInventoryRowData` — both have `itemType: "card" | "sealed"` discriminants. Sort and search helpers in the page use helper functions `itemName(r)` and `itemSetName(r)` to safely handle both types. The "Needs attention" filter covers both card and sealed rows — sealed rows get price-change and list-flag signals once SealedPricePoint data exists. The `InventoryRow` client component dispatches to `CardRow` or `SealedRow` based on `item.itemType`. Sealed items without a linked `SealedProduct` (shouldn't happen after migration) are silently skipped.
 
 ### Add page (`app/(app)/add/`)
-`add-card-client.tsx` renders two tabs ("Single Card" / "Sealed Product") at the top. Selecting "Sealed Product" renders `AddSealedForm` from `add-sealed-client.tsx`. The tab is reflected in the URL param `?type=sealed` and the page server component passes `defaultTab` so deep links work. The card search flow is unchanged.
+`add-card-client.tsx` renders two tabs ("Single Card" / "Sealed Product") at the top. Selecting "Sealed Product" renders `AddSealedForm` from `add-sealed-client.tsx`. The add-sealed flow is search-then-select-or-create: search the `SealedProduct` catalog, select an existing product or create a new one (calls `createSealedProduct`), then fill inventory lot details and submit via `addSealedItem`. The tab is reflected in the URL param `?type=sealed` and the page server component passes `defaultTab` so deep links work.
+
+### Sealed product pricing (`lib/scrape-sealed-price.ts`, cron)
+- `scrapeTcgplayerSealedPrice(url)` — best-effort TCGPlayer HTML scraper. Two-pass: (1) JSON-LD `<script type="application/ld+json">` with `"@type": "Product"` offers block; (2) `__NEXT_DATA__` embedded JSON. Returns `{ market, low, high }` — all-null on failure, never throws.
+- The cron job (`app/api/cron/refresh-prices/route.ts`) runs the sealed refresh phase after cards: queries `SealedProduct` rows with a `tcgplayerUrl` that have at least one inventory item, calls the scraper, inserts a `SealedPricePoint`. Rate limited at 1 s between requests. Returns `{ cards: {...}, sealed: {...} }` counters.
+- The cron response format changed from `{ refreshed, skipped, errors }` (flat) to `{ cards: { refreshed, skipped, errors }, sealed: { refreshed, skipped, errors } }` — update any monitoring/CI that parses this.
 
 ### Shared types across server/client
 Don't `import type { Foo } from "@/app/api/**/route"` in client components — even type-only imports can drag the route handler's server-only dependencies (`auth`, `prisma`) into the client bundle graph. Put shared shapes in `lib/*-types.ts` (see `lib/card-search-types.ts`, `lib/sealed-types.ts` for the pattern).

@@ -18,32 +18,58 @@ export const SEALED_PRODUCT_TYPE_LABELS: Record<string, string> = {
 
 export const SEALED_PRODUCT_TYPES = Object.keys(SEALED_PRODUCT_TYPE_LABELS);
 
+/** A catalog entry returned by searchSealedProducts. */
+export interface SealedProductResult {
+  id: string;
+  setId: string | null;
+  setName: string | null;
+  productType: string;
+  name: string;
+  tcgplayerUrl: string | null;
+  imageUrl: string | null;
+}
+
+/** Read-only product catalog metadata shown on the detail page. */
+export interface SealedProductInfo {
+  id: string;
+  name: string;
+  productType: string;
+  setName: string | null;
+  imageUrl: string | null;
+  tcgplayerUrl: string | null;
+}
+
 export interface SealedInventoryRowData {
   itemType: "sealed";
   id: string;
   createdAt: string; // ISO string, used for sort
+  // Product catalog fields (denormalized from SealedProduct for display)
+  sealedProductId: string;
   productType: string;
   name: string;
   setName: string | null;
+  imageUrl: string | null;
+  tcgplayerUrl: string | null;
+  // Inventory lot fields
   quantity: number;
   isSealed: boolean;
   purchasePrice: string; // serialized Decimal
   listPrice: string | null; // serialized Decimal or null
   notes: string | null;
-  imageUrl: string | null;
+  // Price signals (computed server-side from SealedPricePoint history)
+  marketPrice: string | null;
+  priceChangePct: number | null;
+  listFlag: "underpriced" | "overpriced" | null;
 }
 
-/** Shape passed to the sealed detail page's client component. */
+/** Inventory lot fields passed to the sealed detail page client component. */
 export interface EditableSealedItem {
   id: string;
-  productType: string;
-  name: string;
-  setName: string | null;
+  sealedProductId: string;
   quantity: number;
   isSealed: boolean;
   purchasePrice: string;
   purchasedAt: string | null;
   listPrice: string | null;
   notes: string | null;
-  imageUrl: string | null;
 }

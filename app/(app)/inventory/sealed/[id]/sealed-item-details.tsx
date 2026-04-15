@@ -4,14 +4,11 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { updateSealedItem } from "@/lib/sealed-actions";
 import type { ActionResult } from "@/lib/actions";
-import {
-  SEALED_PRODUCT_TYPE_LABELS,
-  SEALED_PRODUCT_TYPES,
-  type EditableSealedItem,
-} from "@/lib/sealed-types";
+import type { EditableSealedItem, SealedProductInfo } from "@/lib/sealed-types";
+import { SEALED_PRODUCT_TYPE_LABELS } from "@/lib/sealed-types";
 
 // Re-export so the page can import from a single place.
-export type { EditableSealedItem };
+export type { EditableSealedItem, SealedProductInfo };
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -101,7 +98,13 @@ function Field({
 // Main component
 // ---------------------------------------------------------------------------
 
-export function SealedItemDetails({ item }: { item: EditableSealedItem }) {
+export function SealedItemDetails({
+  item,
+  product,
+}: {
+  item: EditableSealedItem;
+  product: SealedProductInfo;
+}) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -132,7 +135,7 @@ export function SealedItemDetails({ item }: { item: EditableSealedItem }) {
   }
 
   const typeLabel =
-    SEALED_PRODUCT_TYPE_LABELS[item.productType] ?? item.productType;
+    SEALED_PRODUCT_TYPE_LABELS[product.productType] ?? product.productType;
 
   // ---- View mode ----
   if (!editing) {
@@ -140,7 +143,7 @@ export function SealedItemDetails({ item }: { item: EditableSealedItem }) {
       <>
         <DetailSection title="Product details">
           <DetailRow label="Type" value={typeLabel} />
-          <DetailRow label="Set" value={item.setName ?? "—"} />
+          <DetailRow label="Set" value={product.setName ?? "—"} />
           <DetailRow label="Condition" value={item.isSealed ? "Sealed" : "Opened"} />
           <DetailRow label="Quantity" value={String(item.quantity)} />
         </DetailSection>
@@ -151,15 +154,15 @@ export function SealedItemDetails({ item }: { item: EditableSealedItem }) {
           <DetailRow label="List price" value={formatMoney(item.listPrice)} />
         </DetailSection>
 
-        {item.imageUrl && (
+        {product.imageUrl && (
           <DetailSection title="Image">
             <a
-              href={item.imageUrl}
+              href={product.imageUrl}
               target="_blank"
               rel="noreferrer"
               className="break-all text-sm text-blue-600 underline underline-offset-2 hover:text-blue-800 dark:text-blue-400"
             >
-              {item.imageUrl}
+              {product.imageUrl}
             </a>
           </DetailSection>
         )}
@@ -183,52 +186,16 @@ export function SealedItemDetails({ item }: { item: EditableSealedItem }) {
     );
   }
 
-  // ---- Edit mode ----
+  // ---- Edit mode (inventory lot fields only — product catalog is immutable) ----
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       <input type="hidden" name="itemId" value={item.id} />
 
-      {/* Product details */}
+      {/* Inventory details */}
       <fieldset className="space-y-3 rounded-xl border border-black/10 p-4 dark:border-white/10">
         <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-          Product details
+          Inventory details
         </legend>
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Product type" error={fieldErrors.productType} required>
-            <select
-              name="productType"
-              defaultValue={item.productType}
-              className="input-base"
-            >
-              {SEALED_PRODUCT_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {SEALED_PRODUCT_TYPE_LABELS[t]}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <Field label="Set name" error={fieldErrors.setName}>
-            <input
-              name="setName"
-              type="text"
-              defaultValue={item.setName ?? ""}
-              maxLength={100}
-              className="input-base"
-            />
-          </Field>
-        </div>
-
-        <Field label="Product name" error={fieldErrors.name} required>
-          <input
-            name="name"
-            type="text"
-            defaultValue={item.name}
-            maxLength={200}
-            className="input-base"
-          />
-        </Field>
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Quantity" error={fieldErrors.quantity} required>
@@ -294,23 +261,6 @@ export function SealedItemDetails({ item }: { item: EditableSealedItem }) {
             name="purchasedAt"
             type="date"
             defaultValue={toDateInputValue(item.purchasedAt)}
-            className="input-base"
-          />
-        </Field>
-      </fieldset>
-
-      {/* Image URL */}
-      <fieldset className="space-y-3 rounded-xl border border-black/10 p-4 dark:border-white/10">
-        <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-          Image
-        </legend>
-        <Field label="Image URL (optional)" error={fieldErrors.imageUrl}>
-          <input
-            name="imageUrl"
-            type="url"
-            defaultValue={item.imageUrl ?? ""}
-            maxLength={500}
-            placeholder="https://…"
             className="input-base"
           />
         </Field>

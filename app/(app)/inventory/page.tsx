@@ -82,8 +82,8 @@ function sortRows(
         cmp = itemSetName(a).localeCompare(itemSetName(b));
         break;
       case "marketPrice": {
-        const am = a.itemType === "card" ? a.marketPrice : null;
-        const bm = b.itemType === "card" ? b.marketPrice : null;
+        const am = a.marketPrice;
+        const bm = b.marketPrice;
         cmp = Number(am ?? -1) - Number(bm ?? -1);
         break;
       }
@@ -94,8 +94,8 @@ function sortRows(
         cmp = Number(a.purchasePrice) - Number(b.purchasePrice);
         break;
       case "priceChange": {
-        const ap = a.itemType === "card" ? (a.priceChangePct ?? 0) : 0;
-        const bp = b.itemType === "card" ? (b.priceChangePct ?? 0) : 0;
+        const ap = a.priceChangePct ?? 0;
+        const bp = b.priceChangePct ?? 0;
         cmp = Math.abs(ap) - Math.abs(bp);
         break;
       }
@@ -207,6 +207,13 @@ export default async function InventoryPage({
     }),
     prisma.sealedInventoryItem.findMany({
       where: { userId },
+      include: {
+        product: {
+          include: {
+            prices: { orderBy: { capturedAt: "desc" }, take: 20 },
+          },
+        },
+      },
       orderBy: { createdAt: "desc" },
       take: 200,
     }),
@@ -279,21 +286,44 @@ export default async function InventoryPage({
     };
   });
 
-  // Build sealed rows.
-  const sealedRows: SealedInventoryRowData[] = sealedItems.map((item) => ({
-    itemType: "sealed" as const,
-    id: item.id,
-    createdAt: item.createdAt.toISOString(),
-    productType: item.productType,
-    name: item.name,
-    setName: item.setName,
-    quantity: item.quantity,
-    isSealed: item.isSealed,
-    purchasePrice: item.purchasePrice.toString(),
-    listPrice: item.listPrice?.toString() ?? null,
-    notes: item.notes,
-    imageUrl: item.imageUrl,
-  }));
+  // Build sealed rows (skip legacy items not yet linked to a catalog product).
+  const sealedRows: SealedInventoryRowData[] = sealedItems
+    .filter((item) => item.product != null)
+    .map((item) => {
+      const product = item.product!;
+      const rawHistory = product.prices;
+      const latestPrice = rawHistory[0];
+      const history = rawHistory.map((p) => ({
+        market: p.market?.toString() ?? null,
+        capturedAt: p.capturedAt,
+      }));
+      const marketPrice = latestPrice?.market?.toString() ?? null;
+      const priceChangePct = recentChange(history, PRICE_CHANGE_DAYS);
+      const listFlag = classifyListPrice(
+        item.listPrice?.toString(),
+        latestPrice?.market?.toString(),
+        listPct,
+      );
+      return {
+        itemType: "sealed" as const,
+        id: item.id,
+        createdAt: item.createdAt.toISOString(),
+        sealedProductId: product.id,
+        productType: product.productType,
+        name: product.name,
+        setName: product.setName,
+        imageUrl: product.imageUrl,
+        tcgplayerUrl: product.tcgplayerUrl,
+        quantity: item.quantity,
+        isSealed: item.isSealed,
+        purchasePrice: item.purchasePrice.toString(),
+        listPrice: item.listPrice?.toString() ?? null,
+        notes: item.notes,
+        marketPrice,
+        priceChangePct,
+        listFlag,
+      };
+    });
 
   // Merge into a single list before filtering / sorting.
   const allRows: InventoryRowData[] = [...cardRows, ...sealedRows];
@@ -307,13 +337,20 @@ export default async function InventoryPage({
       )
     : allRows;
 
-  // 2. Attention filter — only card rows have price-change / list-flag signals.
-  const attentionRows = searchedRows.filter(
-    (r) =>
-      r.itemType === "card" &&
-      ((r.priceChangePct != null && Math.abs(r.priceChangePct) >= changePct) ||
-        r.listFlag != null),
-  );
+  // 2. Attention filter — rows with price-change or list-flag signals.
+  const attentionRows = searchedRows.filter((r) => {
+    if (r.itemType === "card") {
+      return (
+        (r.priceChangePct != null && Math.abs(r.priceChangePct) >= changePct) ||
+        r.listFlag != null
+      );
+    }
+    // Sealed rows now have price signals too once market data is available.
+    return (
+      (r.priceChangePct != null && Math.abs(r.priceChangePct) >= changePct) ||
+      r.listFlag != null
+    );
+  });
   const attentionCount = attentionRows.length;
   const filteredRows = attentionOnly ? attentionRows : searchedRows;
 

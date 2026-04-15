@@ -186,10 +186,28 @@ function SealedRow({
         <td className="px-3 py-2 text-right tabular-nums">
           {formatMoney(item.purchasePrice)}
         </td>
-        {/* No market price for sealed */}
-        <td className="px-3 py-2 text-right tabular-nums text-neutral-400">—</td>
+        {/* Market price from SealedPricePoint history */}
+        <td className="px-3 py-2 text-right tabular-nums">
+          {item.tcgplayerUrl ? (
+            <a
+              href={item.tcgplayerUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="tabular-nums hover:underline"
+              title="View on TCGPlayer"
+            >
+              {formatMoney(item.marketPrice)}
+            </a>
+          ) : (
+            <span className={item.marketPrice ? "" : "text-neutral-400"}>
+              {formatMoney(item.marketPrice)}
+            </span>
+          )}
+          <PriceChangeBadge pct={item.priceChangePct} />
+        </td>
         {/* Inline list price edit */}
         <td className="px-3 py-2 text-right">
+          <ListFlagPill flag={item.listFlag} />
           {editing ? (
             <div className="flex items-center justify-end gap-1">
               <input

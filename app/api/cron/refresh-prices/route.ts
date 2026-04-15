@@ -30,6 +30,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
 import { getCard, pricesForFinish } from "@/lib/pokemontcg";
+import { scrapeTcgplayerSealedPrice } from "@/lib/scrape-sealed-price";
 import { Finish, Prisma } from "@prisma/client";
 
 const BATCH_SIZE = 10;
@@ -137,6 +138,51 @@ export async function POST(request: Request) {
   }
 
   const { refreshed, skipped, errors } = counters;
-  console.log(`[refresh-prices] done — refreshed=${refreshed} skipped=${skipped} errors=${errors}`);
-  return NextResponse.json({ refreshed, skipped, errors });
+  console.log(`[refresh-prices] cards done — refreshed=${refreshed} skipped=${skipped} errors=${errors}`);
+
+  // --- Refresh sealed product prices ---
+  // Find SealedProducts that have at least one inventory item and a tcgplayerUrl.
+  const sealedProducts = await prisma.sealedProduct.findMany({
+    where: {
+      tcgplayerUrl: { not: null },
+      inventoryItems: { some: {} },
+    },
+    select: { id: true, tcgplayerUrl: true },
+  });
+
+  const sealedCounters = { refreshed: 0, skipped: 0, errors: 0 };
+
+  for (const product of sealedProducts) {
+    if (!product.tcgplayerUrl) continue;
+    try {
+      const prices = await scrapeTcgplayerSealedPrice(product.tcgplayerUrl);
+      await prisma.sealedPricePoint.create({
+        data: {
+          sealedProductId: product.id,
+          market: prices.market != null ? new Prisma.Decimal(prices.market) : null,
+          low: prices.low != null ? new Prisma.Decimal(prices.low) : null,
+          high: prices.high != null ? new Prisma.Decimal(prices.high) : null,
+        },
+      });
+      sealedCounters.refreshed++;
+    } catch (err) {
+      console.error(`[refresh-prices] sealed failed for product=${product.id}`, err);
+      sealedCounters.errors++;
+      sealedCounters.skipped++;
+    }
+
+    // 1-second delay between TCGPlayer requests (live site, not an API).
+    if (sealedProducts.indexOf(product) < sealedProducts.length - 1) {
+      await new Promise((r) => setTimeout(r, 1_000));
+    }
+  }
+
+  console.log(
+    `[refresh-prices] sealed done — refreshed=${sealedCounters.refreshed} skipped=${sealedCounters.skipped} errors=${sealedCounters.errors}`,
+  );
+
+  return NextResponse.json({
+    cards: { refreshed, skipped, errors },
+    sealed: sealedCounters,
+  });
 }
