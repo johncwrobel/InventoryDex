@@ -44,30 +44,44 @@ export const { handlers, auth, signIn, signOut } = NextAuth(() => ({
      * Invite path: a pending Invite row exists → allow and consume the invite.
      * Otherwise: reject.
      */
-    async signIn({ user }) {
+    async signIn({ user, email: emailParams }) {
       const email = user.email?.toLowerCase();
       if (!email) return "/not-invited?reason=invalid";
 
+      // Auth.js calls signIn twice for magic-link flows:
+      //   1. verificationRequest=true  → user submitted their email, link not yet clicked
+      //   2. verificationRequest falsy → user clicked the link, actual sign-in
+      // We must allow both phases through for allowed users, but only consume
+      // the invite (stamp acceptedAt) on the actual sign-in, not on step 1.
+      // If we stamp on step 1, the step-2 lookup finds acceptedAt is set and
+      // rejects the user as "no invite found".
+      const isVerificationRequest = emailParams?.verificationRequest === true;
+
       // Admin path: ALLOWED_EMAILS are always permitted and auto-promoted.
       if (env.ALLOWED_EMAILS.includes(email)) {
-        await prisma.user.upsert({
-          where: { email },
-          create: { email, role: "ADMIN" },
-          update: { role: "ADMIN" },
-        });
+        if (!isVerificationRequest) {
+          await prisma.user.upsert({
+            where: { email },
+            create: { email, role: "ADMIN" },
+            update: { role: "ADMIN" },
+          });
+        }
         return true;
       }
 
-      // Invite path: consume a pending invite if one exists.
+      // Invite path: verify a pending invite exists. Only consume it (stamp
+      // acceptedAt) on the actual sign-in click, not on the request phase.
       const invite = await prisma.invite.findFirst({
         where: { email, acceptedAt: null },
       });
       if (!invite) return "/not-invited?reason=no-invite";
 
-      await prisma.invite.update({
-        where: { id: invite.id },
-        data: { acceptedAt: new Date() },
-      });
+      if (!isVerificationRequest) {
+        await prisma.invite.update({
+          where: { id: invite.id },
+          data: { acceptedAt: new Date() },
+        });
+      }
       return true;
     },
 
