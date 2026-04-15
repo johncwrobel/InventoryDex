@@ -50,10 +50,12 @@ Next.js 16 has breaking changes from prior versions. **Before writing any Next-s
 ## Architecture
 
 ### Data model
-Three domain tables sit alongside the Auth.js tables:
+Four domain tables sit alongside the Auth.js tables:
 
 - **`Card`** — canonical pokemontcg.io card metadata (name, set, images, TCGPlayer URL). Keyed by the upstream id (e.g. `sv1-25`) and **shared across all users** so we fetch/cache each unique card once.
 - **`InventoryItem`** — one vendor's copy of a card. Multiple rows per card are allowed (different condition / finish / purchase lots). Owns `purchasePrice`, `listPrice`, `quantity`, `condition`, `finish`, `notes`. Scoped to `userId`. Also supports graded cards via `isGraded` (boolean), `gradingCompany` (e.g. "PSA"), and `grade` (e.g. "10"). When `isGraded=true`, `condition` is stored as `NEAR_MINT` as a DB placeholder and is hidden from the UI; `gradingCompany` and `grade` are the authoritative condition descriptor. Market pricing for graded cards is not yet implemented.
+- **`SealedInventoryItem`** — sealed product inventory (booster boxes, ETBs, packs, etc.) tracked separately from individual cards because the data shape is fundamentally different — no `cardId`, `condition`, `finish`, or market price feed. Fields: `productType` (`SealedProductType` enum), `name`, `setName`, `quantity`, `isSealed` (boolean), `purchasePrice`, `listPrice`, `purchasedAt`, `notes`, `imageUrl`. Scoped to `userId`. The upstream pokemontcg.io API does not expose sealed products, so all data is entered manually. Server actions live in `lib/sealed-actions.ts`; shared row type in `lib/sealed-types.ts`. Detail page at `/inventory/sealed/[id]`.
+  - `SealedProductType` enum values: `BOOSTER_PACK`, `BOOSTER_BUNDLE`, `BOOSTER_BOX`, `ELITE_TRAINER_BOX`, `SUPER_PREMIUM_COLLECTION`, `SPECIAL_COLLECTION`, `THEME_DECK`, `TIN`, `OTHER`.
 - **`PricePoint`** — historical market-price snapshots per `(cardId, finish)`. Enables "recent change over N days" math. Never mutate existing rows — always insert a new snapshot.
 
 ### Routing layout
@@ -62,8 +64,8 @@ Three domain tables sit alongside the Auth.js tables:
 - `app/api/*` — route handlers. Auth-gated endpoints must call `auth()` themselves; being under `(app)` doesn't protect API routes.
 - **Dynamic segment params are async in Next.js 16.** Page props are `{ params: Promise<{ id: string }> }`, not `{ params: { id: string } }`. Destructure with `const { id } = await params;` at the top of the server component. Same rule for `searchParams`.
 
-### Server actions (`lib/actions.ts`)
-All mutation actions live in `lib/actions.ts` with a top-of-file `"use server"` directive and follow this pattern:
+### Server actions (`lib/actions.ts`, `lib/sealed-actions.ts`)
+Card actions live in `lib/actions.ts`; sealed product actions live in `lib/sealed-actions.ts`. Both use a top-of-file `"use server"` directive and follow this pattern:
 1. `const session = await auth()` — reject if no `session.user.id`.
 2. Zod-validate the `FormData` payload. Return `{ ok: false, error, fieldErrors }` on failure.
 3. For updates/deletes, scope the Prisma query with `where: { id, userId }` (use `updateMany`/`deleteMany` and check `count`) so users can only touch their own rows.
@@ -78,8 +80,14 @@ When a route needs client-side interactivity (e.g. the add-card search, the inli
 - `app/(app)/<route>/page.tsx` stays a server component. It fetches data and renders a thin wrapper.
 - `app/(app)/<route>/<name>-client.tsx` (or `<name>.tsx` with `"use client"`) holds the interactive piece.
 
+### Inventory list (`app/(app)/inventory/page.tsx`)
+The inventory page fetches both `InventoryItem` (cards) and `SealedInventoryItem` (sealed products) in parallel and merges them into a unified `InventoryRowData` union type before passing to the client. `InventoryRowData = CardInventoryRowData | SealedInventoryRowData` — both have `itemType: "card" | "sealed"` discriminants. Sort and search helpers in the page use helper functions `itemName(r)` and `itemSetName(r)` to safely handle both types. The "Needs attention" filter only applies to card rows (sealed items have no price-change or list-flag signals). The `InventoryRow` client component dispatches to `CardRow` or `SealedRow` based on `item.itemType`.
+
+### Add page (`app/(app)/add/`)
+`add-card-client.tsx` renders two tabs ("Single Card" / "Sealed Product") at the top. Selecting "Sealed Product" renders `AddSealedForm` from `add-sealed-client.tsx`. The tab is reflected in the URL param `?type=sealed` and the page server component passes `defaultTab` so deep links work. The card search flow is unchanged.
+
 ### Shared types across server/client
-Don't `import type { Foo } from "@/app/api/**/route"` in client components — even type-only imports can drag the route handler's server-only dependencies (`auth`, `prisma`) into the client bundle graph. Put shared shapes in `lib/*-types.ts` (see `lib/card-search-types.ts` for the pattern).
+Don't `import type { Foo } from "@/app/api/**/route"` in client components — even type-only imports can drag the route handler's server-only dependencies (`auth`, `prisma`) into the client bundle graph. Put shared shapes in `lib/*-types.ts` (see `lib/card-search-types.ts`, `lib/sealed-types.ts` for the pattern).
 
 ### User management (invite system)
 - `ALLOWED_EMAILS` env var = admin list (bypass DB, auto-promoted to `ADMIN` role on first sign-in).

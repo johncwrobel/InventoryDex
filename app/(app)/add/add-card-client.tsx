@@ -18,6 +18,7 @@ import type {
   CardSetSummary,
 } from "@/lib/card-search-types";
 import { addInventoryItem } from "@/lib/actions";
+import { AddSealedForm } from "./add-sealed-client";
 
 type SortValue = "releaseDate:desc" | "releaseDate:asc" | "name:asc";
 
@@ -43,8 +44,73 @@ const FINISHES = [
   { value: "FIRST_ED_HOLO", label: "1st Edition Holo" },
 ] as const;
 
-export function AddCardClient() {
+type Tab = "card" | "sealed";
+
+export function AddCardClient({ defaultTab = "card" }: { defaultTab?: Tab }) {
   const router = useRouter();
+  const [tab, setTab] = useState<Tab>(defaultTab);
+
+  // Sync tab to URL param so the browser back button works correctly.
+  function switchTab(next: Tab) {
+    setTab(next);
+    const url = next === "sealed" ? "/add?type=sealed" : "/add";
+    window.history.replaceState(null, "", url);
+  }
+
+  if (tab === "sealed") {
+    return (
+      <>
+        <Tabs active="sealed" onSwitch={switchTab} />
+        <AddSealedForm />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <Tabs active="card" onSwitch={switchTab} />
+      <CardSearchFlow router={router} />
+    </>
+  );
+}
+
+function Tabs({
+  active,
+  onSwitch,
+}: {
+  active: Tab;
+  onSwitch: (t: Tab) => void;
+}) {
+  return (
+    <div className="flex gap-1 rounded-xl border border-black/10 p-1 dark:border-white/10">
+      <button
+        type="button"
+        onClick={() => onSwitch("card")}
+        className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition ${
+          active === "card"
+            ? "bg-red-600 text-white"
+            : "text-neutral-600 hover:bg-black/5 dark:text-neutral-400 dark:hover:bg-white/10"
+        }`}
+      >
+        Single Card
+      </button>
+      <button
+        type="button"
+        onClick={() => onSwitch("sealed")}
+        className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition ${
+          active === "sealed"
+            ? "bg-red-600 text-white"
+            : "text-neutral-600 hover:bg-black/5 dark:text-neutral-400 dark:hover:bg-white/10"
+        }`}
+      >
+        Sealed Product
+      </button>
+    </div>
+  );
+}
+
+// Renamed from AddCardClient so it can render inside the tab shell.
+function CardSearchFlow({ router }: { router: ReturnType<typeof useRouter> }) {
   const [query, setQuery] = useState("");
   const [setId, setSetId] = useState<string>("");
   const [sort, setSort] = useState<SortValue>("releaseDate:desc");

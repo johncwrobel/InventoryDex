@@ -4,8 +4,9 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
 import { recentChange, classifyListPrice } from "@/lib/pricing";
-import { InventoryRow, type InventoryRowData } from "./inventory-row";
+import { InventoryRow, type InventoryRowData, type CardInventoryRowData } from "./inventory-row";
 import { InventorySearch } from "./inventory-search";
+import type { SealedInventoryRowData } from "@/lib/sealed-types";
 
 const PRICE_CHANGE_DAYS = 7;
 
@@ -58,6 +59,13 @@ function sortHref(
   return `/inventory?${params.toString()}`;
 }
 
+function itemName(r: InventoryRowData): string {
+  return r.itemType === "card" ? r.card.name : r.name;
+}
+function itemSetName(r: InventoryRowData): string {
+  return r.itemType === "card" ? r.card.setName : (r.setName ?? "");
+}
+
 function sortRows(
   rows: InventoryRowData[],
   sort: string,
@@ -68,27 +76,35 @@ function sortRows(
     let cmp = 0;
     switch (sort) {
       case "cardName":
-        cmp = a.card.name.localeCompare(b.card.name);
+        cmp = itemName(a).localeCompare(itemName(b));
         break;
       case "setName":
-        cmp = a.card.setName.localeCompare(b.card.setName);
+        cmp = itemSetName(a).localeCompare(itemSetName(b));
         break;
-      case "marketPrice":
-        cmp = Number(a.marketPrice ?? -1) - Number(b.marketPrice ?? -1);
+      case "marketPrice": {
+        const am = a.itemType === "card" ? a.marketPrice : null;
+        const bm = b.itemType === "card" ? b.marketPrice : null;
+        cmp = Number(am ?? -1) - Number(bm ?? -1);
         break;
+      }
       case "listPrice":
         cmp = Number(a.listPrice ?? -1) - Number(b.listPrice ?? -1);
         break;
       case "purchasePrice":
         cmp = Number(a.purchasePrice) - Number(b.purchasePrice);
         break;
-      case "priceChange":
-        cmp =
-          Math.abs(a.priceChangePct ?? 0) - Math.abs(b.priceChangePct ?? 0);
+      case "priceChange": {
+        const ap = a.itemType === "card" ? (a.priceChangePct ?? 0) : 0;
+        const bp = b.itemType === "card" ? (b.priceChangePct ?? 0) : 0;
+        cmp = Math.abs(ap) - Math.abs(bp);
         break;
-      case "rarity":
-        cmp = (a.card.rarity ?? "").localeCompare(b.card.rarity ?? "");
+      }
+      case "rarity": {
+        const ar = a.itemType === "card" ? (a.card.rarity ?? "") : "";
+        const br = b.itemType === "card" ? (b.card.rarity ?? "") : "";
+        cmp = ar.localeCompare(br);
         break;
+      }
       default:
         // dateAdded
         cmp = a.createdAt < b.createdAt ? -1 : 1;
@@ -171,38 +187,45 @@ export default async function InventoryPage({
   const session = await auth();
   const userId = session!.user!.id;
 
-  const items = await prisma.inventoryItem.findMany({
-    where: { userId },
-    include: {
-      card: {
-        include: {
-          prices: {
-            orderBy: { capturedAt: "desc" },
-            // 20 snapshots is plenty for a 7-day delta at 1 snapshot/day
-            take: 20,
+  const [cardItems, sealedItems] = await Promise.all([
+    prisma.inventoryItem.findMany({
+      where: { userId },
+      include: {
+        card: {
+          include: {
+            prices: {
+              orderBy: { capturedAt: "desc" },
+              // 20 snapshots is plenty for a 7-day delta at 1 snapshot/day
+              take: 20,
+            },
           },
         },
       },
-    },
-    // Fetch newest-first so the default dateAdded sort is just the natural order
-    orderBy: { createdAt: "desc" },
-    take: 200,
-  });
+      // Fetch newest-first so the default dateAdded sort is just the natural order
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    }),
+    prisma.sealedInventoryItem.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    }),
+  ]);
 
-  if (items.length === 0) {
+  if (cardItems.length === 0 && sealedItems.length === 0) {
     return (
       <div className="flex min-h-[60dvh] flex-col items-center justify-center gap-4 text-center">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">No cards yet</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">No inventory yet</h1>
           <p className="text-sm text-neutral-600 dark:text-neutral-400">
-            Your inventory is empty. Add your first card to get started.
+            Your inventory is empty. Add a card or sealed product to get started.
           </p>
         </div>
         <Link
           href="/add"
           className="rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-red-700"
         >
-          Add a card
+          Add item
         </Link>
       </div>
     );
@@ -211,8 +234,8 @@ export default async function InventoryPage({
   const changePct = env.PRICE_CHANGE_THRESHOLD_PCT;
   const listPct = env.LIST_PRICE_THRESHOLD_PCT;
 
-  // Build the full row list with pre-computed badges.
-  const allRows: InventoryRowData[] = items.map((item) => {
+  // Build card rows with pre-computed badges.
+  const cardRows: CardInventoryRowData[] = cardItems.map((item) => {
     const rawHistory = item.card.prices.filter((p) => p.finish === item.finish);
     const latestPrice = rawHistory[0];
     const history = rawHistory.map((p) => ({
@@ -229,6 +252,7 @@ export default async function InventoryPage({
     );
 
     return {
+      itemType: "card" as const,
       id: item.id,
       createdAt: item.createdAt.toISOString(),
       quantity: item.quantity,
@@ -255,20 +279,40 @@ export default async function InventoryPage({
     };
   });
 
-  // 1. Search filter
+  // Build sealed rows.
+  const sealedRows: SealedInventoryRowData[] = sealedItems.map((item) => ({
+    itemType: "sealed" as const,
+    id: item.id,
+    createdAt: item.createdAt.toISOString(),
+    productType: item.productType,
+    name: item.name,
+    setName: item.setName,
+    quantity: item.quantity,
+    isSealed: item.isSealed,
+    purchasePrice: item.purchasePrice.toString(),
+    listPrice: item.listPrice?.toString() ?? null,
+    notes: item.notes,
+    imageUrl: item.imageUrl,
+  }));
+
+  // Merge into a single list before filtering / sorting.
+  const allRows: InventoryRowData[] = [...cardRows, ...sealedRows];
+
+  // 1. Search filter — match on name and set name for both types.
   const searchedRows = searchQuery
     ? allRows.filter(
         (r) =>
-          r.card.name.toLowerCase().includes(searchQuery) ||
-          r.card.setName.toLowerCase().includes(searchQuery),
+          itemName(r).toLowerCase().includes(searchQuery) ||
+          itemSetName(r).toLowerCase().includes(searchQuery),
       )
     : allRows;
 
-  // 2. Attention filter (applied within search results)
+  // 2. Attention filter — only card rows have price-change / list-flag signals.
   const attentionRows = searchedRows.filter(
     (r) =>
-      (r.priceChangePct != null && Math.abs(r.priceChangePct) >= changePct) ||
-      r.listFlag != null,
+      r.itemType === "card" &&
+      ((r.priceChangePct != null && Math.abs(r.priceChangePct) >= changePct) ||
+        r.listFlag != null),
   );
   const attentionCount = attentionRows.length;
   const filteredRows = attentionOnly ? attentionRows : searchedRows;
